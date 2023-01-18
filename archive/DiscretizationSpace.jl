@@ -4,27 +4,27 @@ module DiscretizationS
 
     struct Space
         x0::Float64
-        y0::Float64
-        
+        y0::Float64    
         xprime::Array{Float64}
         yprime::Array{Float64}
         zprime::Array{Float64}
         z::Array{Float64}
-
+        z_max::Float64
     end
 
     function space_config(;x0::Float64, y0::Float64, 
         d_xprime::Float64, d_yprime::Float64, d_zprime::Float64, 
         xprime_max::Float64, yprime_max::Float64, zprime_max::Float64, 
-        d_z::Float64, z_max::Float64)
+        d_z::Float64, zmax::Float64, z_max::Float64)
 
         xprime = -xprime_max : d_xprime : xprime_max
         yprime = 0.0 : d_yprime : yprime_max
         zprime = -zprime_max : d_zprime : zprime_max
 
-        z = -z_max : d_z : z_max
+        z = -zmax : d_z : zmax
 
-        return Space(x0, y0, xprime, yprime, zprime, z)
+        return Space(x0, y0, xprime, yprime, zprime, z, z_max)
+
     end
     
     function space_grid(space::Space)
@@ -42,6 +42,9 @@ end
 
 module DiscretizationEnergyTime
 
+    using ..PhysicalContants
+    export EnergyTime, energytime_config
+
     struct EnergyTime
 
         ddt::Float64
@@ -54,33 +57,23 @@ module DiscretizationEnergyTime
 
     end
 
-    function energytime_config(;x0::Float64, y0::Float64, 
-        d_xprime::Float64, d_yprime::Float64, d_zprime::Float64, 
-        xprime_max::Float64, yprime_max::Float64, zprime_max::Float64, 
-        d_z::Float64, z_max::Float64)
+    function energytime_config(;t0::Float64, ddt::Float64, delay_max::Float64, fs::Float64, l::Float64)
         
-        # energytime = EnergyTime()
-
-        # discretization.ddt, discretization.deltat = delay(discretization_parameters.ddt, discretization_parameters.delay_max);
         deltat = -delay_max : ddt : delay_max
         t, omega, energy = incidence(fs, l); 
-        dt = discretization.t[2] - discretization.t[1];
-        
+        dt = t[2] - t[1];
 
-        return Space(x0, y0, xprime, yprime, zprime, z)
+        return EnergyTime(ddt, deltat, t0, t, dt, omega, energy)
     
     end
 
     function  incidence(fs::Float64, l::Float64)
     
-        consts = constants_fundamental()
-        HBAR = consts.HBAR;
-        Q_E = consts.Q_E;
         dt = 1/fs;#[s]
         domega = fs/l*(2*pi);#[Hz]
-        t =  collect(transpose([-l/2:l/2;])).*dt;#[s
-        omega = collect(transpose([-l/2:l/2;]))*domega;#[Hz
-        energy = omega.*HBAR/Q_E;#[eV]
+        t =  (-l/2:l/2).*dt;#[s
+        omega = (-l/2:l/2)*domega;#[Hz
+        energy = omega.*PhysicalContants.HBAR/PhysicalContants.Q_E;#[eV]
     
         return t, omega, energy
         

@@ -88,9 +88,40 @@ function incoherent_convolution_fast(psi::Array{Float64}, w::AbstractArray{Float
     psi_sum./=trapz((:,e_w),psi_sum)
     return psi_sum./=maximum(psi[:])
 
-    return psi_incoherent
+    # return psi_incoherent
 
 end
+
+# function incoherent_convolution_faster(psi::Array{Float64}, et_grid::EnergyTime ,
+#     w_cut_off_factor::Float64 = 0.01)
+
+#     psi_sum = zeros(size(psi));
+
+#     w_cutOff = w_cut_off_factor*maximum(et_grid.w[:]);
+
+
+#     # % Example dont use such code. It becomes hard to modify
+#     # % w_cutOff = 0.01*max(w(:));
+#     l_t_w = length(et_grid.t_w)
+#     l_e_w = length(et_grid.e_w)
+
+#     Threads.@threads for k = 1:l_t_w * l_e_w
+        
+#         incoherent_circ!(psi_sum, et_grid.w, w_cutOff, 
+#         psi, et_grid.t_w, et_grid.e_w, k, l_t_w, l_e_w)
+    
+#     end
+
+#     # psi = psi_sum;
+#     # psi_incoherent = psi./trapz((:,e_w),psi);
+#     # psi_incoherent = psi_incoherent./maximum(psi_incoherent[:]);
+
+#     psi_sum./=trapz((:,e_w),psi_sum)
+#     return psi_sum./=maximum(psi[:])
+
+#     # return psi_incoherent
+
+# end
 
 function incoherent_circ!(psi_sum::Array{Float64}, w::Array{Float64}, w_cutOff::Float64,
     psi::Array{Float64}, t_w::Array{Float64}, 

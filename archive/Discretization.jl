@@ -1,4 +1,4 @@
-mutable struct Discretization
+struct Discretization
 
     ddt::Float64
     deltat::Array{Float64}
@@ -24,27 +24,60 @@ mutable struct Discretization
     dt::Float64
 
     function Discretization(discretization_parameters::discretization_params)
-        discretization = new()
-        discretization.x0 = discretization_parameters.x0;
-        discretization.y0 = discretization_parameters.y0;
-        discretization.d_xprime = discretization_parameters.d_xprime;
-        discretization.d_yprime = discretization_parameters.d_yprime;
-        discretization.d_zprime = discretization_parameters.d_zprime;
-        discretization.ddt, discretization.deltat = delay(discretization_parameters.ddt, discretization_parameters.delay_max);
-        discretization.z , discretization.deltaz = zstep(discretization_parameters.ddz, discretization_parameters.zmax);
-        discretization.t, discretization.omega, discretization.energy = incidence(discretization_parameters.fs, discretization_parameters.l); 
-        discretization.dt = discretization.t[2] - discretization.t[1];
-        discretization.t0 = discretization_parameters.t0;
+        
+        x0 = discretization_parameters.x0;
+        y0 = discretization_parameters.y0;
+        d_xprime = discretization_parameters.d_xprime;
+        d_yprime = discretization_parameters.d_yprime;
+        d_zprime = discretization_parameters.d_zprime;
+        ddt, deltat = delay(discretization_parameters.ddt, discretization_parameters.delay_max);
+        z , deltaz = zstep(discretization_parameters.ddz, discretization_parameters.zmax);
+        t, omega, energy = incidence(discretization_parameters.fs, discretization_parameters.l); 
+        dt = t[2] - t[1];
+        t0 = discretization_parameters.t0;
 
         
-        discretization.xprime , discretization.yprime , discretization.zprime , 
-            discretization.XPRIME, discretization.YPRIME, discretization.ZPRIME, discretization.Z = 
-        space_points_grid(discretization_parameters , discretization.z);
-        discretization.z_max = discretization_parameters.z_max;
+        xprime , yprime , zprime , 
+            XPRIME, YPRIME, ZPRIME, Z = 
+        space_points_grid(discretization_parameters , z);
+        z_max = discretization_parameters.z_max;
+
+        discretization = new(ddt,deltat,z,deltaz,t,omega,energy,x0,y0,t0,xprime,yprime,zprime,
+        d_xprime,d_yprime,d_zprime,XPRIME,YPRIME,ZPRIME,Z,z_max,dt)
+
         return discretization
     end
+
+
+    # function Discretization(discretization_parameters::discretization_params)
+    #     discretization = new()
+    #     discretization.x0 = discretization_parameters.x0;
+    #     discretization.y0 = discretization_parameters.y0;
+    #     discretization.d_xprime = discretization_parameters.d_xprime;
+    #     discretization.d_yprime = discretization_parameters.d_yprime;
+    #     discretization.d_zprime = discretization_parameters.d_zprime;
+    #     discretization.ddt, discretization.deltat = delay(discretization_parameters.ddt, discretization_parameters.delay_max);
+    #     discretization.z , discretization.deltaz = zstep(discretization_parameters.ddz, discretization_parameters.zmax);
+    #     discretization.t, discretization.omega, discretization.energy = incidence(discretization_parameters.fs, discretization_parameters.l); 
+    #     discretization.dt = discretization.t[2] - discretization.t[1];
+    #     discretization.t0 = discretization_parameters.t0;
+
+        
+    #     discretization.xprime , discretization.yprime , discretization.zprime , 
+    #         discretization.XPRIME, discretization.YPRIME, discretization.ZPRIME, discretization.Z = 
+    #     space_points_grid(discretization_parameters , discretization.z);
+    #     discretization.z_max = discretization_parameters.z_max;
+    #     return discretization
+    # end
     
 end
+
+# function set_discretization()
+
+#     discretization = new(ddt,deltat,z,deltaz,t,omega,energy,x0,y0,t0,xprime,yprime,zprime,
+#     d_xprime,d_yprime,d_zprime,XPRIME,YPRIME,ZPRIME,Z,z_max,dt)
+
+# end
 
 function delay(ddt::Float64, delay_max::Float64)
     # %DISCRETIZATION_DT Summary of this function goes here

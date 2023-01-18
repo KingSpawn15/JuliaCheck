@@ -88,37 +88,42 @@ function fn()
 
     elec= ElectronSetup(parameters.utem_parameters)
 
-    interaction_potential_photodember()
+    # interaction_potential_photodember()
 
-    @time t_c_subsampled, t_c, v_pd = interaction_potential_photodember(dis, material, parameters.laser_parameters ,
+    @time t_c_subsampled, t_c, v_pd = 
+    interaction_potential_photodember(dis, material, parameters.laser_parameters ,
         parameters.numerical_parameters)
 
 
     return v_pd, t_c, t_c_subsampled, elec
 end
 
-# v_pd, t_c, t_c_subsampled, elec = fn();
+const v_pd, t_c, t_c_subsampled, elec = fn();
 
 # # # v_pd, t_c, t_c_subsampled, elec = fn()
-parameters = default_parameters_2()
-material = IndiumArsenide()
-dis_params = parameters.discretization_parameters
-dis = Discretization(dis_params)
-elec= ElectronSetup(parameters.utem_parameters)
+const parameters = default_parameters_2()
+const material = IndiumArsenide()
+const dis_params = parameters.discretization_parameters
+const dis = Discretization(dis_params)
+# elec= ElectronSetup(parameters.utem_parameters)
 # # # # %Time domain Fourier transform
 # @time f_t = calculate_ft(dis,1e-1 .* v_pd,elec);
 
-# @time f_t_fast = calculate_ft_fast(dis,1e-1 .* v_pd,elec);
+@time const f_t_fast = calculate_ft_fast(dis,1e-1 .* v_pd,elec);
 
-# w, e_w, t_w = energy_time_grid(elec,parameters.numerical_parameters.subsampling_factor,dis.energy, dis.deltat);
+const w, e_w, t_w = energy_time_grid(elec,parameters.numerical_parameters.subsampling_factor,dis.energy, dis.deltat);
 
-# @time psi = calculate_psi_coherent(dis,elec, f_t);
-# psi_sub = psi_subsampled(parameters.numerical_parameters.subsampling_factor,psi, e_w);
+@time const psi = calculate_psi_coherent(dis,elec, f_t_fast);
+const psi_sub = psi_subsampled(parameters.numerical_parameters.subsampling_factor,psi, e_w);
 # @time psi_incoherent = incoherent_convolution(psi_sub, w, t_w, e_w);
-# @time psi_incoherent_fast = incoherent_convolution_fast(psi_sub, w, t_w, e_w);
+@time const psi_incoherent_fast = incoherent_convolution_fast(psi_sub, w, t_w, e_w);
 
-# using Plots
-# figure = (; resolution=(600, 400), font="CMU Serif")
-# axis = (; xlabel="x", ylabel="y", aspect=1)
-# heatmap(vec(e_w), vec(t_w), reverse(psi_incoherent_fast,dims = 1), c =:jet, aspect = 1)
+# const et_grid = EnergyTime(w,t_w,e_w);
+# @time psi_incoherent_faster = incoherent_convolution_faster(psi_sub, et_grid);
+using Plots
+figure = (; resolution=(600, 400), font="CMU Serif")
+axis = (; xlabel="x", ylabel="y", aspect=1)
+heatmap(vec(e_w), vec(t_w), reverse(psi_incoherent_fast,dims = 1), c =:jet, aspect = 1)
+
+
 
