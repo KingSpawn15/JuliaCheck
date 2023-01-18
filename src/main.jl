@@ -509,30 +509,52 @@ module mod_cdem
 
         l_tc = length(t_c_subsampled)
 
-        factor_a = (1/(4*pi*EPSILON_0))*d14*e0_squared.*(green_kernel.*laser_xz.*exp.(-alpha.*discretization.YPRIME))
 
-        rho_factor = (1/(4*pi*EPSILON_0)).*green_kernel.*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*
+        factor_rho = (1/(4*pi*EPSILON_0)).*green_kernel.*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*
             ((2*sqrt(2)/laser_spot_sigma^2).*(discretization.XPRIME.*sin(2*theta_pol)+discretization.ZPRIME.*cos(2*theta_pol)) .- alpha);
 
-        
-        threaded_calculation_rectification!(discretization.YPRIME,
-        alpha,
-        d14,
-        e0_squared,
-        green_kernel,
-        laser_pulse_time_sigma,
-        laser_xz,
+        factor_a = d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*(2/sqrt(6)).*cos(2*theta_pol).*(MU_0/(4*pi)).*green_kernel;
+    
+        factor_rho_Y0 = (1/(4*pi*EPSILON_0))*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*green_kernel;
+
+        factor_rho_Z0 = -(1/(4.0*pi*EPSILON_0))*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*((2.0/sqrt(6.0)).*cos(2.0*theta_pol)).*green_kernel;
+
+        # threaded_calculation_rectification!(discretization.YPRIME,
+        # alpha,
+        # d14,
+        # e0_squared,
+        # green_kernel,
+        # laser_pulse_time_sigma,
+        # laser_xz,
+        # mz0_ind,
+        # pz0_ind,
+        # factor_rho,
+        # t0,
+        # theta_pol,
+        # y0_ind,
+        # t_c_subsampled,
+        # l_tc,
+        # t_r,interaction_v,
+        # electron_velocity,
+        # xprime,yprime,zprime)
+
+        threaded_calculation_rectification2!(laser_pulse_time_sigma,
         mz0_ind,
         pz0_ind,
-        rho_factor,
+        factor_rho,
+        factor_a,
+        factor_rho_Y0,
+        factor_rho_Z0,
         t0,
-        theta_pol,
         y0_ind,
         t_c_subsampled,
         l_tc,
-        t_r,interaction_v,
+        t_r,
+        interaction_v,
         electron_velocity,
-        xprime,yprime,zprime)
+        xprime,
+        yprime,
+        zprime)
 
         intf = linear_interpolation((vec(t_c_subsampled),[1:size(interaction_v)[2];]), interaction_v,extrapolation_bc=Flat());
         interaction_v = transpose([intf(x,y) for x in t_c, y in [1:size(interaction_v)[2];] ]);
@@ -549,18 +571,76 @@ module mod_cdem
         return laser_xz
     end
 
-    function threaded_calculation_rectification!(YPRIME::Array{Float64},
-        alpha::Float64,
-        d14::Float64,
-        e0_squared::Float64,
-        green_kernel::Array{Float64},
-        laser_pulse_time_sigma::Float64,
-        laser_xz::Array{Float64},
+    # function threaded_calculation_rectification!(YPRIME::Array{Float64},
+    #     alpha::Float64,
+    #     d14::Float64,
+    #     e0_squared::Float64,
+    #     green_kernel::Array{Float64},
+    #     laser_pulse_time_sigma::Float64,
+    #     laser_xz::Array{Float64},
+    #     mz0_ind::Int64,
+    #     pz0_ind::Int64,
+    #     factor_rho::Array{Float64},
+    #     t0::Float64,
+    #     theta_pol::Float64,
+    #     y0_ind::Int64,
+    #     t_c_subsampled::Array{Float64},
+    #     n::Int64,
+    #     t_r::Array{Float64},
+    #     interaction_v::Array{Float64},
+    #     electron_velocity::Float64,
+    #     xprime::Array{Float64},yprime::Array{Float64},zprime::Array{Float64})
+        
+    #     Threads.@threads for time_ind in 1:n
+
+    #         if(mod(time_ind,10)==0)
+    #             print("$(time_ind) out of $(n) \n")
+    #         end
+
+    #         # dPhi = zeros(size(YPRIME))
+    #         # dA = zeros(size(YPRIME))
+    #         # dPhi_Y0=zeros(size(YPRIME)[1],size(YPRIME)[3],size(YPRIME)[4])
+    #         # dPhi_Z0=zeros(size(YPRIME)[1],size(YPRIME)[2],size(YPRIME)[4]) 
+
+    #         t_prime = t_c_subsampled[time_ind] .- t_r;
+
+    #         laser_t = exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
+
+    #         dPhi, dA = calculate_internal(t_prime,t0,laser_pulse_time_sigma,
+    #         factor_rho,laser_t,d14,e0_squared,laser_xz,
+    #         alpha,YPRIME,theta_pol,green_kernel)
+
+    #         # calculate_internal!(dPhi, dA,t_prime,t0,laser_pulse_time_sigma,
+    #         # factor_rho,laser_t,d14,e0_squared,laser_xz,
+    #         # alpha,YPRIME,theta_pol,green_kernel)
+
+    #         dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,laser_xz,green_kernel,
+    #         d14,e0_squared,alpha,YPRIME, 
+    #         theta_pol,y0_ind,mz0_ind, pz0_ind)
+
+    #         # calculate_boundaries!(dPhi_Y0, dPhi_Z0,laser_t,laser_xz,green_kernel,
+    #         # d14,e0_squared,alpha,YPRIME, 
+    #         # theta_pol,y0_ind,mz0_ind, pz0_ind)
+            
+    #         integrate_v_rectification!(interaction_v, 
+    #         dPhi, dA, 
+    #         electron_velocity, 
+    #         dPhi_Y0, dPhi_Z0, 
+    #         time_ind,
+    #         xprime, yprime, zprime)
+
+    #     end
+
+    # end
+
+    function threaded_calculation_rectification2!(laser_pulse_time_sigma::Float64,
         mz0_ind::Int64,
         pz0_ind::Int64,
-        rho_factor::Array{Float64},
+        factor_rho::Array{Float64},
+        factor_a::Array{Float64},
+        factor_rho_Y0::Array{Float64},
+        factor_rho_Z0::Array{Float64},
         t0::Float64,
-        theta_pol::Float64,
         y0_ind::Int64,
         t_c_subsampled::Array{Float64},
         n::Int64,
@@ -584,17 +664,17 @@ module mod_cdem
 
             laser_t = exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
 
-            dPhi, dA = calculate_internal(t_prime,t0,laser_pulse_time_sigma,
-            rho_factor,laser_t,d14,e0_squared,laser_xz,
-            alpha,YPRIME,theta_pol,green_kernel)
+            dPhi, dA = calculate_internal_2(t_prime::Array{Float64},
+            t0::Float64,laser_pulse_time_sigma::Float64,
+            factor_rho::Array{Float64},factor_a::Array{Float64},
+            laser_t::Array{Float64})
 
             # calculate_internal!(dPhi, dA,t_prime,t0,laser_pulse_time_sigma,
-            # rho_factor,laser_t,d14,e0_squared,laser_xz,
+            # factor_rho,laser_t,d14,e0_squared,laser_xz,
             # alpha,YPRIME,theta_pol,green_kernel)
 
-            dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,laser_xz,green_kernel,
-            d14,e0_squared,alpha,YPRIME, 
-            theta_pol,y0_ind,mz0_ind, pz0_ind)
+            dPhi_Y0, dPhi_Z0 = calculate_boundaries_2(laser_t,y0_ind,mz0_ind, pz0_ind,
+            factor_rho_Y0,factor_rho_Z0)
 
             # calculate_boundaries!(dPhi_Y0, dPhi_Z0,laser_t,laser_xz,green_kernel,
             # d14,e0_squared,alpha,YPRIME, 
@@ -622,66 +702,90 @@ module mod_cdem
         return nothing
     end
 
-    function calculate_integrands(YPRIME::Array{Float64},
-            alpha::Float64,
-            d14::Float64,
-            e0_squared::Float64,
-            green_kernel::Array{Float64},
-            laser_pulse_time_sigma::Float64,
-            laser_xz::Array{Float64},
-            mz0_ind::Int64,
-            pz0_ind::Int64,
-            rho_factor::Array{Float64},
-            t0::Float64,
-            theta_pol::Float64,
-            y0_ind::Int64,
-            t_c_subsampled::Array{Float64},
-            time_ind::Int64,
-            t_r::Array{Float64})
+    # function calculate_integrands(YPRIME::Array{Float64},
+    #         alpha::Float64,
+    #         d14::Float64,
+    #         e0_squared::Float64,
+    #         green_kernel::Array{Float64},
+    #         laser_pulse_time_sigma::Float64,
+    #         laser_xz::Array{Float64},
+    #         mz0_ind::Int64,
+    #         pz0_ind::Int64,
+    #         factor_rho::Array{Float64},
+    #         t0::Float64,
+    #         theta_pol::Float64,
+    #         y0_ind::Int64,
+    #         t_c_subsampled::Array{Float64},
+    #         time_ind::Int64,
+    #         t_r::Array{Float64})
 
-            t_prime = t_c_subsampled[time_ind] .- t_r;
+    #         t_prime = t_c_subsampled[time_ind] .- t_r;
 
-            laser_t = exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
+    #         laser_t = exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
 
-            dPhi, dA = calculate_internal(t_prime,t0,laser_pulse_time_sigma,
-            rho_factor,laser_t,d14,e0_squared,laser_xz,
-            alpha,YPRIME,theta_pol,green_kernel)
+    #         dPhi, dA = calculate_internal(t_prime,t0,laser_pulse_time_sigma,
+    #         factor_rho,laser_t,d14,e0_squared,laser_xz,
+    #         alpha,YPRIME,theta_pol,green_kernel)
 
-            dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,laser_xz,green_kernel,
-            d14,e0_squared,alpha,YPRIME, 
-            theta_pol,y0_ind,mz0_ind, pz0_ind)
+    #         dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,laser_xz,green_kernel,
+    #         d14,e0_squared,alpha,YPRIME, 
+    #         theta_pol,y0_ind,mz0_ind, pz0_ind)
 
-            # integrate_v_rectification!(interaction_v, dPhi, dA, electron_velocity, dPhi_Y0, dPhi_Z0, time_ind,
-            # xprime, yprime, zprime)
+    #         # integrate_v_rectification!(interaction_v, dPhi, dA, electron_velocity, dPhi_Y0, dPhi_Z0, time_ind,
+    #         # xprime, yprime, zprime)
 
-            return dPhi, dA, dPhi_Y0, dPhi_Z0
+    #         return dPhi, dA, dPhi_Y0, dPhi_Z0
     
-    end
+    # end
 
-    function calculate_internal(t_prime::Array{Float64},t0::Float64,laser_pulse_time_sigma::Float64,
-        rho_factor::Array{Float64},laser_t::Array{Float64},d14::Float64,e0_squared::Float64,laser_xz::Array{Float64},
-        alpha::Float64,YPRIME::Array{Float64},theta_pol::Float64,green_kernel::Array{Float64})
+    # function calculate_internal(t_prime::Array{Float64},t0::Float64,laser_pulse_time_sigma::Float64,
+    #     factor_rho::Array{Float64},laser_t::Array{Float64},d14::Float64,e0_squared::Float64,laser_xz::Array{Float64},
+    #     alpha::Float64,YPRIME::Array{Float64},theta_pol::Float64,green_kernel::Array{Float64})
 
         
-        dPhi = rho_factor .* laser_t;
-        # copyto!(dPhi, rho_factor .* laser_t)
-        dPzdt = d14*e0_squared.*laser_t.*laser_xz.*exp.(-alpha.*YPRIME).*
-                (2/sqrt(6)).*cos(2*theta_pol).*( -2 .*(t_prime .- t0)./laser_pulse_time_sigma.^2);
+    #     dPhi = factor_rho .* laser_t;
+    #     # copyto!(dPhi, factor_rho .* laser_t)
+    #     dPzdt = d14*e0_squared.*laser_t.*laser_xz.*exp.(-alpha.*YPRIME).*
+    #             (2/sqrt(6)).*cos(2*theta_pol).*( -2 .*(t_prime .- t0)./laser_pulse_time_sigma.^2);
         
-        dA = 1 * (MU_0/(4*pi)).*dPzdt.*green_kernel;
-        # copyto!(dA,1 * (MU_0/(4*pi)).*dPzdt.*green_kernel)
+    #     dA = 1 * (MU_0/(4*pi)).*dPzdt.*green_kernel;
+    #     # copyto!(dA,1 * (MU_0/(4*pi)).*dPzdt.*green_kernel)
+    #     return dPhi , dA
+
+    # end
+
+    # function calculate_boundaries(laser_t::Array{Float64},laser_xz::Array{Float64},green_kernel::Array{Float64},
+    #     d14::Float64,e0_squared::Float64,alpha::Float64,YPRIME::Array{Float64},
+    #     theta_pol::Float64,y0_ind::Int64,mz0_ind::Int64, pz0_ind::Int64)
+
+    #     rho_Y0 =  (1/(4*pi*EPSILON_0))*(1/sqrt(3)).*d14*e0_squared.*laser_t.*laser_xz.*green_kernel;
+
+    #     rho_mZ0 = -(1/(4.0*pi*EPSILON_0))*d14*e0_squared.*laser_t.*laser_xz.*
+    #     exp.(-alpha.*YPRIME).*((2.0/sqrt(6.0)).*cos(2.0*theta_pol)).*green_kernel;
+    #     rho_pZ0 = -rho_mZ0;
+
+    #     return rho_Y0[:,y0_ind,:,:], (rho_mZ0[:,:,mz0_ind,:] .+ rho_pZ0[:,:,pz0_ind,:])
+
+    # end
+
+    function calculate_internal_2(t_prime::Array{Float64},t0::Float64,laser_pulse_time_sigma::Float64,
+        factor_rho::Array{Float64},factor_a::Array{Float64},laser_t::Array{Float64})
+
+        
+        dPhi = factor_rho .* laser_t;
+
+        dA = factor_a.*laser_t.*( -2 .*(t_prime .- t0)./laser_pulse_time_sigma.^2);
+        
+
         return dPhi , dA
 
     end
 
-    function calculate_boundaries(laser_t::Array{Float64},laser_xz::Array{Float64},green_kernel::Array{Float64},
-        d14::Float64,e0_squared::Float64,alpha::Float64,YPRIME::Array{Float64},
-        theta_pol::Float64,y0_ind::Int64,mz0_ind::Int64, pz0_ind::Int64)
+    function calculate_boundaries_2(laser_t::Array{Float64},y0_ind::Int64,mz0_ind::Int64, pz0_ind::Int64,
+        factor_rho_Y0::Array{Float64},factor_rho_Z0::Array{Float64})
 
-        rho_Y0 =  (1/(4*pi*EPSILON_0))*(1/sqrt(3)).*d14*e0_squared.*laser_t.*laser_xz.*green_kernel;
-
-        rho_mZ0 = -(1/(4.0*pi*EPSILON_0))*d14*e0_squared.*laser_t.*laser_xz.*
-        exp.(-alpha.*YPRIME).*((2.0/sqrt(6.0)).*cos(2.0*theta_pol)).*green_kernel;
+        rho_Y0 =  laser_t.*factor_rho_Y0;
+        rho_mZ0 = laser_t.*factor_rho_Z0;
         rho_pZ0 = -rho_mZ0;
 
         return rho_Y0[:,y0_ind,:,:], (rho_mZ0[:,:,mz0_ind,:] .+ rho_pZ0[:,:,pz0_ind,:])
