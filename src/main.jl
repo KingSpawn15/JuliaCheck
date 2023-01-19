@@ -71,7 +71,7 @@ end
 
 module mod_customtypes
 
-    export Discretization, NumericalParameters
+    export Discretization, NumericalParameters, FactorsRect
 
     struct Discretization
         x0::Float64
@@ -102,6 +102,15 @@ module mod_customtypes
             return new(tc_subsampling, subsampling_factor)
         end
     
+    end
+
+    struct FactorsRect
+
+        factor_rho::Array{Float64}
+        factor_a::Array{Float64}
+        factor_rho_Y0::Array{Float64}
+        factor_rho_Z0::Array{Float64}
+
     end
 
 end
@@ -456,7 +465,7 @@ module mod_cdem
         C = mod_physicalconstants.C;
         Q_E = mod_physicalconstants.Q_E;
         ETA_0 = mod_physicalconstants.ETA_0;
-        # ETA_0 = const.('ETA_0');
+
 
         # # InAs parameters
         d14 = material.d14;
@@ -465,96 +474,66 @@ module mod_cdem
         # # Laser parameters
 
         laser_spot_sigma = laser.laser_spot_sigma;
-
         laser_pulse_time_fwhm = laser.laser_pulse_time_fwhm;#[s]
         laser_pulse_time_sigma = laser.laser_pulse_time_sigma;#[s]
         pulse_energy = laser.pulse_energy;
+        e0_squared = (pulse_energy/laser_pulse_time_fwhm)*2*ETA_0;
 
         xprime = discretization.xprime;
         yprime = discretization.yprime;
         zprime = discretization.xprime;
-
-
         z_max = discretization.z_max;#[m] Sample +/-z boundary
-
-        green_kernel  = calculate_green_kernel_rectification(discretization);
 
         # # Down sample t to improve run speed
 
         t_c = discretization.t[discretization.t .> discretization.t0];
         t_c_subsampled = t_c[1:numerical_parameters.tc_subsampling:end];
 
-
         y0_ind = findfirst(yprime .>= 0);
         mz0_ind = findfirst(zprime .>= -z_max);
         pz0_ind = findfirst(zprime .>= z_max);
 
-        # laser_xz = exp.(-(discretization.XPRIME.^2 .+ discretization.ZPRIME.^2)./(laser_spot_sigma.^2));
-        # laser_xz = laser_xz .* (discretization.ZPRIME .<= z_max) .* (discretization.ZPRIME .>= -z_max);
-        laser_xz = calculate_laser_xz(discretization,laser_spot_sigma);
-
-        e0_squared = (pulse_energy/laser_pulse_time_fwhm)*2*ETA_0;
-
-        # t0 = -discretization.t0;#[s]  ### WTF is this line
         t0 = 0.2e-12;
-        dt = discretization.dt;
 
         interaction_v = zeros(length(t_c_subsampled),length(discretization.z));
 
         theta_pol = laser.theta_pol;
         electron_velocity = electron.electron_velocity;
 
-        t_r = calculate_t_r(discretization.x0, discretization.y0, discretization.XPRIME,
-        discretization.YPRIME, discretization.ZPRIME, discretization.Z)
-
         l_tc = length(t_c_subsampled)
 
+        factors_rect = calculate_factors_rectification(calculate_green_kernel_rectification(discretization),
+        calculate_laser_xz(discretization,laser_spot_sigma),
+        d14,
+        e0_squared,
+        alpha,
+        discretization,
+        laser_spot_sigma,
+        theta_pol)
 
-        factor_rho = (1/(4*pi*EPSILON_0)).*green_kernel.*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*
-            ((2*sqrt(2)/laser_spot_sigma^2).*(discretization.XPRIME.*sin(2*theta_pol)+discretization.ZPRIME.*cos(2*theta_pol)) .- alpha);
-
-        factor_a = d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*(2/sqrt(6)).*cos(2*theta_pol).*(MU_0/(4*pi)).*green_kernel;
-    
-        factor_rho_Y0 = (1/(4*pi*EPSILON_0))*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*green_kernel;
-
-        factor_rho_Z0 = -(1/(4.0*pi*EPSILON_0))*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*((2.0/sqrt(6.0)).*cos(2.0*theta_pol)).*green_kernel;
-
-        # threaded_calculation_rectification!(discretization.YPRIME,
-        # alpha,
-        # d14,
-        # e0_squared,
-        # green_kernel,
-        # laser_pulse_time_sigma,
-        # laser_xz,
-        # mz0_ind,
-        # pz0_ind,
-        # factor_rho,
-        # t0,
-        # theta_pol,
-        # y0_ind,
-        # t_c_subsampled,
-        # l_tc,
-        # t_r,interaction_v,
-        # electron_velocity,
-        # xprime,yprime,zprime)
-
-        threaded_calculation_rectification2!(laser_pulse_time_sigma,
+        final_params = FinalParams(laser_pulse_time_sigma,
         mz0_ind,
         pz0_ind,
-        factor_rho,
-        factor_a,
-        factor_rho_Y0,
-        factor_rho_Z0,
+        calculate_factors_rectification(calculate_green_kernel_rectification(discretization),
+        calculate_laser_xz(discretization,laser_spot_sigma),
+        d14,
+        e0_squared,
+        alpha,
+        discretization,
+        laser_spot_sigma,
+        theta_pol),
         t0,
         y0_ind,
         t_c_subsampled,
         l_tc,
-        t_r,
-        interaction_v,
+        calculate_t_r(discretization.x0, discretization.y0, discretization.XPRIME,
+        discretization.YPRIME, discretization.ZPRIME, discretization.Z),
         electron_velocity,
         xprime,
         yprime,
         zprime)
+
+        @time threaded_calculation_rectification!(interaction_v,final_params)
 
         intf = linear_interpolation((vec(t_c_subsampled),[1:size(interaction_v)[2];]), interaction_v,extrapolation_bc=Flat());
         interaction_v = transpose([intf(x,y) for x in t_c, y in [1:size(interaction_v)[2];] ]);
@@ -565,131 +544,139 @@ module mod_cdem
 
     end
 
-    function calculate_laser_xz(discretization::Discretization, laser_spot_sigma::Float64)
-        laser_xz = exp.(-(discretization.XPRIME.^2 .+ discretization.ZPRIME.^2)./(laser_spot_sigma.^2));
-        laser_xz = laser_xz .* (discretization.ZPRIME .<= discretization.z_max) .* (discretization.ZPRIME .>= -discretization.z_max);
-        return laser_xz
+    struct FinalParams
+        laser_pulse_time_sigma::Float64
+        mz0_ind::Int64
+        pz0_ind::Int64
+        factors_rect::FactorsRect
+        t0::Float64
+        y0_ind::Int64
+        t_c_subsampled::Array{Float64}
+        l_tc::Int64
+        t_r::Array{Float64}
+        electron_velocity::Float64
+        xprime::Array{Float64}
+        yprime::Array{Float64}
+        zprime::Array{Float64}
     end
 
-    # function threaded_calculation_rectification!(YPRIME::Array{Float64},
-    #     alpha::Float64,
-    #     d14::Float64,
-    #     e0_squared::Float64,
-    #     green_kernel::Array{Float64},
-    #     laser_pulse_time_sigma::Float64,
-    #     laser_xz::Array{Float64},
-    #     mz0_ind::Int64,
-    #     pz0_ind::Int64,
-    #     factor_rho::Array{Float64},
-    #     t0::Float64,
-    #     theta_pol::Float64,
-    #     y0_ind::Int64,
-    #     t_c_subsampled::Array{Float64},
-    #     n::Int64,
-    #     t_r::Array{Float64},
-    #     interaction_v::Array{Float64},
-    #     electron_velocity::Float64,
-    #     xprime::Array{Float64},yprime::Array{Float64},zprime::Array{Float64})
-        
-    #     Threads.@threads for time_ind in 1:n
+    function calculate_factors_rectification(green_kernel::Array{Float64},
+        laser_xz::Array{Float64},
+        d14::Float64,
+        e0_squared::Float64,
+        alpha::Float64,
+        discretization::Discretization,
+        laser_spot_sigma::Float64,
+        theta_pol::Float64)
 
-    #         if(mod(time_ind,10)==0)
-    #             print("$(time_ind) out of $(n) \n")
-    #         end
+        factor_rho=(1/(4*pi*EPSILON_0)).*green_kernel.*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*
+        ((2*sqrt(2)/laser_spot_sigma^2).*(discretization.XPRIME.*sin(2*theta_pol)+discretization.ZPRIME.*cos(2*theta_pol)) .- alpha)
+        factor_a=d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*(2/sqrt(6)).*cos(2*theta_pol).*(MU_0/(4*pi)).*green_kernel
+        factor_rho_Y0=(1/(4*pi*EPSILON_0))*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*green_kernel
+        factor_rho_Z0=-(1/(4.0*pi*EPSILON_0))*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*((2.0/sqrt(6.0)).*cos(2.0*theta_pol)).*green_kernel
 
-    #         # dPhi = zeros(size(YPRIME))
-    #         # dA = zeros(size(YPRIME))
-    #         # dPhi_Y0=zeros(size(YPRIME)[1],size(YPRIME)[3],size(YPRIME)[4])
-    #         # dPhi_Z0=zeros(size(YPRIME)[1],size(YPRIME)[2],size(YPRIME)[4]) 
+        return FactorsRect(factor_rho,factor_a,factor_rho_Y0,factor_rho_Z0)
 
-    #         t_prime = t_c_subsampled[time_ind] .- t_r;
+    end
 
-    #         laser_t = exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
+    function calculate_laser_xz(discretization::Discretization, laser_spot_sigma::Float64)
+          return exp.(-(discretization.XPRIME.^2 .+ discretization.ZPRIME.^2)./(laser_spot_sigma.^2)).*
+        (discretization.ZPRIME .<= discretization.z_max) .* (discretization.ZPRIME .>= -discretization.z_max);
+    end
 
-    #         dPhi, dA = calculate_internal(t_prime,t0,laser_pulse_time_sigma,
-    #         factor_rho,laser_t,d14,e0_squared,laser_xz,
-    #         alpha,YPRIME,theta_pol,green_kernel)
 
-    #         # calculate_internal!(dPhi, dA,t_prime,t0,laser_pulse_time_sigma,
-    #         # factor_rho,laser_t,d14,e0_squared,laser_xz,
-    #         # alpha,YPRIME,theta_pol,green_kernel)
+    
+    function threaded_calculation_rectification!(interaction_v::Array{Float64},final_params::FinalParams)
 
-    #         dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,laser_xz,green_kernel,
-    #         d14,e0_squared,alpha,YPRIME, 
-    #         theta_pol,y0_ind,mz0_ind, pz0_ind)
-
-    #         # calculate_boundaries!(dPhi_Y0, dPhi_Z0,laser_t,laser_xz,green_kernel,
-    #         # d14,e0_squared,alpha,YPRIME, 
-    #         # theta_pol,y0_ind,mz0_ind, pz0_ind)
-            
-    #         integrate_v_rectification!(interaction_v, 
-    #         dPhi, dA, 
-    #         electron_velocity, 
-    #         dPhi_Y0, dPhi_Z0, 
-    #         time_ind,
-    #         xprime, yprime, zprime)
-
-    #     end
-
-    # end
-
-    function threaded_calculation_rectification2!(laser_pulse_time_sigma::Float64,
-        mz0_ind::Int64,
-        pz0_ind::Int64,
-        factor_rho::Array{Float64},
-        factor_a::Array{Float64},
-        factor_rho_Y0::Array{Float64},
-        factor_rho_Z0::Array{Float64},
-        t0::Float64,
-        y0_ind::Int64,
-        t_c_subsampled::Array{Float64},
-        n::Int64,
-        t_r::Array{Float64},
-        interaction_v::Array{Float64},
-        electron_velocity::Float64,
-        xprime::Array{Float64},yprime::Array{Float64},zprime::Array{Float64})
-        
+        n = final_params.l_tc
         Threads.@threads for time_ind in 1:n
 
-            if(mod(time_ind,10)==0)
-                print("$(time_ind) out of $(n) \n")
-            end
+            # if(mod(time_ind,10)==0)
+            #     print("$(time_ind) out of $(n) \n")
+            # end
 
-            # dPhi = zeros(size(YPRIME))
-            # dA = zeros(size(YPRIME))
-            # dPhi_Y0=zeros(size(YPRIME)[1],size(YPRIME)[3],size(YPRIME)[4])
-            # dPhi_Z0=zeros(size(YPRIME)[1],size(YPRIME)[2],size(YPRIME)[4]) 
-
-            t_prime = t_c_subsampled[time_ind] .- t_r;
-
-            laser_t = exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
-
-            dPhi, dA = calculate_internal_2(t_prime::Array{Float64},
-            t0::Float64,laser_pulse_time_sigma::Float64,
-            factor_rho::Array{Float64},factor_a::Array{Float64},
-            laser_t::Array{Float64})
-
-            # calculate_internal!(dPhi, dA,t_prime,t0,laser_pulse_time_sigma,
-            # factor_rho,laser_t,d14,e0_squared,laser_xz,
-            # alpha,YPRIME,theta_pol,green_kernel)
-
-            dPhi_Y0, dPhi_Z0 = calculate_boundaries_2(laser_t,y0_ind,mz0_ind, pz0_ind,
-            factor_rho_Y0,factor_rho_Z0)
-
-            # calculate_boundaries!(dPhi_Y0, dPhi_Z0,laser_t,laser_xz,green_kernel,
-            # d14,e0_squared,alpha,YPRIME, 
-            # theta_pol,y0_ind,mz0_ind, pz0_ind)
-            
-            integrate_v_rectification!(interaction_v, 
-            dPhi, dA, 
-            electron_velocity, 
-            dPhi_Y0, dPhi_Z0, 
+            integrate_v_rectification_final!(interaction_v::Array{Float64},
             time_ind,
-            xprime, yprime, zprime)
+            final_params.t_c_subsampled[time_ind],
+            final_params::FinalParams)
 
         end
 
     end
+    
+    
+    function integrate_v_rectification_final!(interaction_v::Array{Float64},
+        time_ind::Int64,
+        t_c_subsampled_i::Float64,
+        final_params::FinalParams)
+        
+        t_prime = calculate_t_prime(t_c_subsampled_i, final_params.t_r)
+
+        laser_t = calculate_laser_t(t_prime,
+        final_params.t0,
+        final_params.laser_pulse_time_sigma)
+
+        dPhidA = calculate_internal(t_prime,
+        final_params.t0,final_params.laser_pulse_time_sigma,
+        final_params.factors_rect.factor_rho,final_params.factors_rect.factor_a,
+        laser_t,final_params.electron_velocity)
+
+        dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,final_params.y0_ind,final_params.mz0_ind, final_params.pz0_ind,
+            final_params.factors_rect.factor_rho_Y0,final_params.factors_rect.factor_rho_Z0)
+
+        interaction_v[time_ind,:] .= trapz((final_params.xprime,final_params.yprime,final_params.zprime,:),(dPhidA)) .+
+            trapz((final_params.xprime,final_params.zprime,:), dPhi_Y0) .+ trapz((final_params.xprime,final_params.yprime,:),dPhi_Z0)
+
+
+    end
+
+    function integrate_v_rectification_combined!(interaction_v::Array{Float64},
+        electron_velocity::Float64,
+        time_ind::Int64,
+        xprime::Array{Float64}, 
+        yprime::Array{Float64}, 
+        zprime::Array{Float64},
+        t_r::Array{Float64},
+        t_c_subsampled_i::Float64,
+        t0::Float64,
+        laser_pulse_time_sigma::Float64,
+        factors_rect::FactorsRect,
+        y0_ind::Int64,
+        mz0_ind::Int64, 
+        pz0_ind::Int64)
+        
+        t_prime = calculate_t_prime(t_c_subsampled_i, t_r)
+
+        laser_t = calculate_laser_t(t_prime,
+        t0,
+        laser_pulse_time_sigma)
+
+        dPhidA = calculate_internal(t_prime,
+        t0,laser_pulse_time_sigma,
+        factors_rect.factor_rho,factors_rect.factor_a,
+        laser_t,electron_velocity)
+
+        dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,y0_ind,mz0_ind, pz0_ind,
+            factors_rect.factor_rho_Y0,factors_rect.factor_rho_Z0)
+
+        interaction_v[time_ind,:] .= trapz((xprime,yprime,zprime,:),(dPhidA)) .+
+            trapz((xprime,zprime,:), dPhi_Y0) .+ trapz((xprime,yprime,:),dPhi_Z0)
+
+
+    end
+    
+    function calculate_laser_t(t_prime::Array{Float64},
+        t0::Float64,
+        laser_pulse_time_sigma::Float64)
+        return exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
+    end
+
+    function calculate_t_prime(t_c_subsampled_i::Float64, t_r::Array{Float64})
+
+        return  t_c_subsampled_i .- t_r;
+
+    end
+
 
     function integrate_v_rectification!(interaction_v::Array{Float64}, dPhi::Array{Float64}, dA::Array{Float64}, 
         electron_velocity::Float64,
@@ -702,86 +689,14 @@ module mod_cdem
         return nothing
     end
 
-    # function calculate_integrands(YPRIME::Array{Float64},
-    #         alpha::Float64,
-    #         d14::Float64,
-    #         e0_squared::Float64,
-    #         green_kernel::Array{Float64},
-    #         laser_pulse_time_sigma::Float64,
-    #         laser_xz::Array{Float64},
-    #         mz0_ind::Int64,
-    #         pz0_ind::Int64,
-    #         factor_rho::Array{Float64},
-    #         t0::Float64,
-    #         theta_pol::Float64,
-    #         y0_ind::Int64,
-    #         t_c_subsampled::Array{Float64},
-    #         time_ind::Int64,
-    #         t_r::Array{Float64})
+    function calculate_internal(t_prime::Array{Float64},t0::Float64,laser_pulse_time_sigma::Float64,
+        factor_rho::Array{Float64},factor_a::Array{Float64},laser_t::Array{Float64}, electron_velocity::Float64)
 
-    #         t_prime = t_c_subsampled[time_ind] .- t_r;
-
-    #         laser_t = exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
-
-    #         dPhi, dA = calculate_internal(t_prime,t0,laser_pulse_time_sigma,
-    #         factor_rho,laser_t,d14,e0_squared,laser_xz,
-    #         alpha,YPRIME,theta_pol,green_kernel)
-
-    #         dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,laser_xz,green_kernel,
-    #         d14,e0_squared,alpha,YPRIME, 
-    #         theta_pol,y0_ind,mz0_ind, pz0_ind)
-
-    #         # integrate_v_rectification!(interaction_v, dPhi, dA, electron_velocity, dPhi_Y0, dPhi_Z0, time_ind,
-    #         # xprime, yprime, zprime)
-
-    #         return dPhi, dA, dPhi_Y0, dPhi_Z0
+        return factor_rho .* laser_t - electron_velocity.*factor_a.*laser_t.*( -2.0 .*(t_prime .- t0)./laser_pulse_time_sigma.^2)
     
-    # end
-
-    # function calculate_internal(t_prime::Array{Float64},t0::Float64,laser_pulse_time_sigma::Float64,
-    #     factor_rho::Array{Float64},laser_t::Array{Float64},d14::Float64,e0_squared::Float64,laser_xz::Array{Float64},
-    #     alpha::Float64,YPRIME::Array{Float64},theta_pol::Float64,green_kernel::Array{Float64})
-
-        
-    #     dPhi = factor_rho .* laser_t;
-    #     # copyto!(dPhi, factor_rho .* laser_t)
-    #     dPzdt = d14*e0_squared.*laser_t.*laser_xz.*exp.(-alpha.*YPRIME).*
-    #             (2/sqrt(6)).*cos(2*theta_pol).*( -2 .*(t_prime .- t0)./laser_pulse_time_sigma.^2);
-        
-    #     dA = 1 * (MU_0/(4*pi)).*dPzdt.*green_kernel;
-    #     # copyto!(dA,1 * (MU_0/(4*pi)).*dPzdt.*green_kernel)
-    #     return dPhi , dA
-
-    # end
-
-    # function calculate_boundaries(laser_t::Array{Float64},laser_xz::Array{Float64},green_kernel::Array{Float64},
-    #     d14::Float64,e0_squared::Float64,alpha::Float64,YPRIME::Array{Float64},
-    #     theta_pol::Float64,y0_ind::Int64,mz0_ind::Int64, pz0_ind::Int64)
-
-    #     rho_Y0 =  (1/(4*pi*EPSILON_0))*(1/sqrt(3)).*d14*e0_squared.*laser_t.*laser_xz.*green_kernel;
-
-    #     rho_mZ0 = -(1/(4.0*pi*EPSILON_0))*d14*e0_squared.*laser_t.*laser_xz.*
-    #     exp.(-alpha.*YPRIME).*((2.0/sqrt(6.0)).*cos(2.0*theta_pol)).*green_kernel;
-    #     rho_pZ0 = -rho_mZ0;
-
-    #     return rho_Y0[:,y0_ind,:,:], (rho_mZ0[:,:,mz0_ind,:] .+ rho_pZ0[:,:,pz0_ind,:])
-
-    # end
-
-    function calculate_internal_2(t_prime::Array{Float64},t0::Float64,laser_pulse_time_sigma::Float64,
-        factor_rho::Array{Float64},factor_a::Array{Float64},laser_t::Array{Float64})
-
-        
-        dPhi = factor_rho .* laser_t;
-
-        dA = factor_a.*laser_t.*( -2 .*(t_prime .- t0)./laser_pulse_time_sigma.^2);
-        
-
-        return dPhi , dA
-
     end
 
-    function calculate_boundaries_2(laser_t::Array{Float64},y0_ind::Int64,mz0_ind::Int64, pz0_ind::Int64,
+    function calculate_boundaries(laser_t::Array{Float64},y0_ind::Int64,mz0_ind::Int64, pz0_ind::Int64,
         factor_rho_Y0::Array{Float64},factor_rho_Z0::Array{Float64})
 
         rho_Y0 =  laser_t.*factor_rho_Y0;
