@@ -869,25 +869,13 @@ module cdem_julia
 
         end
 
-        # function calculate_ft_2(f_params::Fparams)
-                    
-        #     # t = discretization.t;
-        #     # omega = discretization.omega;
-        #     # z = discretization.z;
-        #     # deltaz = z[2] - z[1];
-            
-        #     # beta = ft_beta(interact_v, t, omega, z, z[2] - z[1], electron_velocity)
-
-        #     return ft_cal(f_params.electron_velocity, f_params.omega, f_params.t, 
-        #     ft_beta(f_params.interact_v, f_params.t, f_params.omega, f_params.z, 
-        #     f_params.z[2] - f_params.z[1], f_params.electron_velocity))
-
-        # end
-
         function ft_cal(electron_velocity::Float64, omega::Array{Float64,1}, 
             t::Array{Float64,1}, beta::Array{ComplexF64,1})
-            t_map = map(tt-> ft_parameter(omega, tt, beta), t);
-            return transpose(exp.(-circshift((-1.0 ./ (1.0im*HBAR*electron_velocity)).*Q_E.*t_map,(ceil(length(t)/2)))));
+            t_map = zeros(ComplexF64,size(t))
+            ThreadsX.map!(tt-> ft_parameter(omega, tt, beta), t_map, t);
+            t_map .*= ((- Q_E / (1.0im*HBAR*electron_velocity)));
+            # return transpose(exp.(-circshift((-1.0 ./ (1.0im*HBAR*electron_velocity)).*Q_E.*t_map,(ceil(length(t)/2)))));
+            return transpose(exp.(-circshift(t_map,(ceil(length(t)/2)))));
         end
 
         function ft_beta(interact_v::Array{Float64,2}, t::Array{Float64}, 
@@ -896,15 +884,47 @@ module cdem_julia
             return vec(sum(fftshift(fft2(interact_v,length(t)),(2,))./maximum(omega).*[exp(-1.0im*omg*zz/electron_velocity) for zz in z, omg in omega], dims = 1).*deltaz)
         end
 
+        # function ft_parameter(omega::Array{Float64,1}, tt::Float64, 
+        #     beta::Array{ComplexF64,1})::Float64
+        #     trapz(omega,2.0.*real.(exp.(1.0im.*omega.*tt).*beta))
+        # end 
+
         function ft_parameter(omega::Array{Float64,1}, tt::Float64, 
             beta::Array{ComplexF64,1})::Float64
-            trapz(omega,2.0*real.(exp.(1.0im.*omega.*tt).*beta))
+            trapz(omega,ft_integrand(omega, tt, beta))
         end 
 
+        function ft_integrand(omega::Array{Float64,1}, tt::Float64, 
+            beta::Array{ComplexF64,1})::Array{Float64,1}
+            return 2.0.*real.(exp.(1.0im.*omega.*tt).*beta)
+        end
 
         function incoherent_convolution_fast(psi::Array{Float64}, w::AbstractArray{Float64}, t_w::Array{Float64}, e_w::Array{Float64} ,
             w_cut_off_factor::Float64 = 0.01)
 
+            ThreadsX.map!(x->isnan(x) ? 0.0 : x, psi,psi)
+            psi_sum = zeros(size(psi));
+
+            w_cutOff = w_cut_off_factor*maximum(w[:]);
+
+            l_t_w = length(t_w)
+            l_e_w = length(e_w)
+
+            Threads.@threads for k = 1:l_t_w * l_e_w
+                
+                incoherent_circ!(psi_sum, w, w_cutOff, psi, t_w, e_w, k, l_t_w, l_e_w)
+            
+            end
+
+            psi_sum./=trapz((:,e_w),psi_sum)
+            return psi_sum./=maximum(psi[:])
+
+        end
+
+        function incoherent_convolution_fast(psi::SubArray{Float64, 2, Array{Float64, 3}}, w::AbstractArray{Float64}, t_w::Array{Float64}, e_w::Array{Float64} ,
+            w_cut_off_factor::Float64 = 0.01)
+
+            ThreadsX.map!(x->isnan(x) ? 0.0 : x, psi,psi)
             psi_sum = zeros(size(psi));
 
             w_cutOff = w_cut_off_factor*maximum(w[:]);
@@ -956,12 +976,12 @@ module cdem_julia
 
             psi = psi_sum;
             psi_incoherent = psi./trapz((:,e_w),psi);
-            psi_incoherent = psi_incoherent./maximum(psi_incoherent[:]);
+            psi_incoherent ./= maximum(psi_incoherent[:]);
             return psi_incoherent
 
         end
 
-        function psi_subsampled(sub_sample_factor, psi, e_w)
+        function psi_subsampled(sub_sample_factor::Int64, psi::Array{Float64,2}, e_w::Array{Float64,1})
                     
             psi_sub = psi[:,1:sub_sample_factor:end];
             psi_sub = psi_sub./trapz((:,e_w),psi_sub);
@@ -975,27 +995,31 @@ module cdem_julia
             deltat = discretization.deltat;
             t = discretization.t;
             
-            delta_t_rep = repeat(deltat,outer = (1,length(t)));
-            t_rep = repeat(t,outer=(1,length(deltat)))';
+            # delta_t_rep = repeat(deltat,outer = (1,length(t)));
+            # t_rep = repeat(t,outer=(1,length(deltat)))';
 
+            TT = repeat(t,outer=(1,length(deltat)))' .- repeat(deltat,outer = (1,length(t)));
             FT = repeat(f_t,outer = (length(deltat),1));
-            psi_coherent = FT.*exp.(-(t_rep-delta_t_rep).^2/(2*elec.electron_time_coherent_sigma^2));
             
-            psi_coherent = fftshift(fft2(psi_coherent,length(t)),(2,));
+            # psi_coherent = FT.*exp.(-(t_rep.-delta_t_rep).^2.0 ./ (2.0*elec.electron_time_coherent_sigma^2));
+            psi_coherent = FT.*exp.(-(TT).^2 ./ (2.0*elec.electron_time_coherent_sigma^2));
+
+            psi_coherent = abs2.(fftshift(fft2(psi_coherent,length(t)),(2,)));
             
-            psi_coherent = (abs.(psi_coherent)).^2;
-            psi_coherent = psi_coherent./trapz((:,discretization.energy),psi_coherent);
+            # psi_coherent = (abs.(psi_coherent)).^2;
             
-            return psi_coherent
+            return psi_coherent./trapz((:,discretization.energy),psi_coherent);
+            
+            # return psi_coherent
             
         end
 
         function fft2(a::Union{AbstractArray{Float64},Matrix{ComplexF64}}, n::Int64=size(a,2))
             if n <= size(a,2)
-                return A = fft(a[:,1:n],(2,))
+                return fft(a[:,1:n],(2,))
             else
                 A = zeros(size(a,1),n)
-                A[:,1:size(a,2)] .= a
+                @views A[:,1:size(a,2)] .= a
                 return fft(A,(2,))
             end
                 
