@@ -624,16 +624,20 @@ module cdem_julia
             
             t_prime = calculate_t_prime(t_c_subsampled_i, final_params.t_r)
 
+            # laser_t = calculate_laser_t(t_prime,
+            # final_params.t0,
+            # final_params.laser_pulse_time_sigma) .+ 
+            # 0.2.*calculate_laser_t(t_prime,
+            # final_params.t0,
+            # final_params.laser_pulse_time_sigma*2.5) .+
+            # 0.2.*calculate_laser_t(t_prime,
+            # 0.5e-12,
+            # final_params.laser_pulse_time_sigma*0.5)
+            
             laser_t = calculate_laser_t(t_prime,
             final_params.t0,
-            final_params.laser_pulse_time_sigma) .+ 
-            0.2.*calculate_laser_t(t_prime,
-            final_params.t0,
-            final_params.laser_pulse_time_sigma*2.5) .+
-            0.2.*calculate_laser_t(t_prime,
-            0.5e-12,
-            final_params.laser_pulse_time_sigma*0.5)
-
+            final_params.laser_pulse_time_sigma)
+            
             dPhidA = calculate_internal(t_prime,
             final_params.t0,final_params.laser_pulse_time_sigma,
             final_params.factors_rect.factor_rho,final_params.factors_rect.factor_a,
@@ -812,7 +816,7 @@ module cdem_julia
             g = (4.0 .* omega_y.*cos.(omega_y.*t_prime .+ phase).+2.0*gamma.*sin.(omega_y.*t_prime .+ phase)) .*
             exp.(-gamma.*gamma_factor.*t_prime./2.0);
 
-            g[t_prime.<0] .= 0.0
+            # g[t_prime.<0] .= 0.0
 
             return g
         end

@@ -98,7 +98,7 @@ for (ind, angle) in enumerate(angle_array)
     aspect_ratio = 9/2.5,
     xlims=[-4.5,4.5],
     ylims=[-1,1.5],
-    colorbar=true,
+    colorbar=false,
     xaxis=nothing,
     yaxis=nothing,
     right_margin = -0Plots.mm)
