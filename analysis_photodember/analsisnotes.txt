@@ -1,0 +1,23 @@
+
+inas = Material()
+inas.alpha = 7e6;#[m^-1]
+# consts = constants_fundamental();
+EPSILON_0 = mod_physicalconstants.EPSILON_0;
+M_E = mod_physicalconstants.M_E;
+inas.kappa = 12.3*EPSILON_0;    #Yes [With limit]
+inas.gamma = 1.3e13;#[s^-1];    #Yes [With limit]
+inas.gamma_factor = 0.27;       #Artificial
+inas.phase = -0.81;             #Artificial
+inas.me = 0.022*M_E;#[kg] #Yes
+inas.mh = 0.6*M_E;#[kg] #Yes
+inas.lambda = 0.8;#[um]
+inas.hnew = 1.24./inas.lambda;#[eV] #Yes
+inas.eg = 0.354;#[eV] #Yes
+inas.alpha_gamma = 2.2;#[eV^-1] #Yes
+inas.n_eq = 1e17*1e6;#[m^-3]#From resistivity measurement!  #Yes [With limit]
+inas.m_eq = inas.mh;#p-type InAs #Yes [With limit]
+inas.epsilon_e = photoexcited_electron_energy(inas);  #to be updated
+inas.v_t = velocity_t(inas);                                #to be updated
+inas.me0tilda = photoelectron_mass(inas);                   #to be updated
+inas.d14 = 237.6e-12;#[V/m]
+return inas

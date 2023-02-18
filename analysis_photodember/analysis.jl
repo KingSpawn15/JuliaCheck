@@ -1,72 +1,41 @@
-using Plots
-using JLD2, FileIO, CodecZlib
-using .cdem_julia: mod_laser, mod_physicalconstants, mod_utils, mod_customtypes, mod_discrete,
-mod_cdem, mod_eels, mod_electron, mod_material
-
-using ..mod_customtypes:Discretization, NumericalParameters
-using ..mod_electron: Electron, set_electron!
-using ..mod_material: Material, IndiumArsenide
-using ..mod_laser: Laser
-
-las = mod_laser.set_laser!()
-mod_laser.set_laser!(;laser=las,
-    pulse_energy_experiment = 1 * 1e-9,
-    # pulse_energy_experiment = 10 * 1e-9,
-    pulse_energy_gain_factor = 0.014,
-    laser_spot_fwhm = 40e-6,
-    theta_pol = 90*pi/180,
-    laser_pulse_time_fwhm = 300e-15);
-    # laser_pulse_time_fwhm = 50e-15);
-
-dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
-    y0 = -1e-6,
-    d_xprime = 4e-2 * 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    d_yprime = 4e-2 * 1e-6,
-    d_zprime = 4e-2 * 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    xprime_max = 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    yprime_max = 1e-6,
-    zprime_max = 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    d_z = 2e-6,
-    zmax = 1e-4,
-    z_max = 30e-6,
-    t0 = -0.5e-12,
-    ddt = 10e-15,
-    delay_max = 3e-12,
-    # delay_max = 2.5e-12,
-    fs = 2.4e15,
-    # l = 2.4e4)
-    l = 1.08e4)
-
-mat = IndiumArsenide()
-elec = set_electron!()
-set_electron!(;electron=elec,
-    electron_total_energy = 0.94,
-    # electron_total_energy = 1.1,
-    electron_total_time_fs = 360.0,
-    electron_time_coherent_fwhm_fs = 50.0,
-    electron_theta = -7*pi/180,
-    electron_velocity_c = 0.7)
-
-numericalp = NumericalParameters(;tc_subsampling = 30,subsampling_factor = 60)
-
+include("./init_2.jl");
 
 w, e_w, t_w = mod_electron.energy_time_grid(elec,numericalp.subsampling_factor,dis_sp.energy, dis_sp.deltat);
 
-base="analysis_photodember/saved-matrices/interact_v_onepulse"
-angle_array = vcat([0:10:180;],[45 , 135])
 
-for angle in angle_array
-    mod_laser.set_laser!(;laser = las,
-    theta_pol = angle*pi/180)
-    @time _, _, interaction_v=mod_cdem.interaction_potential_rectification(dis_sp, mat, las , elec, numericalp)
+las_pulse_array = [50.0, 100.0, 150.0, 250.0, 450.0, 650.0]
+# las_pulse_array = [50.0]
 
-    jldopen(base*".jld2", "a+"; compress = true) do f
-    f["angle_"*string(angle)] = interaction_v
+
+for las_pulse in las_pulse_array
+    base="analysis_photodember/saved-matrices/interact_v_low_power_single_pulse" * string("_",Int(las_pulse),"fs")
+    angle_array = vcat([0:10:180;],[45 , 135])
+    for angle in angle_array
+        mod_laser.set_laser!(;laser = las,
+        theta_pol = angle*pi/180,
+        laser_pulse_time_fwhm = las_pulse * 1e-15)
+        @time _, _, interaction_v=mod_cdem.interaction_potential_rectification(dis_sp, mat, las , elec, numericalp)
+
+        jldopen(base*".jld2", "a+"; compress = true) do f
+        f["angle_"*string(angle)] = interaction_v
+        end
+
     end
 
+
 end
 
-@time t_c_subsampled, t_c, interaction_v_pd=mod_cdem.interaction_potential_photodember(dis_sp, mat, las, numericalp)
-jldopen(base*".jld2", "a+"; compress = true) do f
-    f["photodember"] = interaction_v_pd
-end
+
+# @time t_c_subsampled, t_c, interaction_v_pd=mod_cdem.interaction_potential_photodember(dis_sp, mat, las, numericalp)
+# jldopen(base*".jld2", "a+"; compress = true) do f
+#     f["photodember"] = interaction_v_pd
+# end
+
+
+# @time _, _, interact_v=mod_cdem.interaction_potential_rectification(dis_sp, mat, las , elec, numericalp)
+
+# f_t = mod_eels.calculate_ft(discretization, interact_v , elec);
+# psi = mod_eels.calculate_psi_coherent(dis_sp, elec, f_t);
+# psi_sub = mod_eels.psi_subsampled(numericalp.subsampling_factor,psi, e_w);
+# psi_incoherent = mod_eels.incoherent_convolution_fast(psi_sub, w, t_w, e_w);
+

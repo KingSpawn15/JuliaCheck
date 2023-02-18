@@ -1,3 +1,7 @@
 *.jld2
 *.jld
 saved_matrices/*
+*.png
+*.svg
+*.jpeg
+

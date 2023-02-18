@@ -41,7 +41,7 @@ mod_electron.set_electron!(;electron=elec,
 
 numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 30,subsampling_factor = 60)
 
-base="analysis_photodember/saved-matrices/interact_v_onepulse"
+base="analysis_photodember/saved-matrices/interact_v_low_power_triple_pulse"
 
 v_struct = load(base*".jld2");
 
@@ -51,10 +51,12 @@ w, e_w, t_w = mod_electron.energy_time_grid(elec,numericalp.subsampling_factor,d
 
 interaction_v_pd = v_struct["photodember"]
 
-alpha_pd_0 =  .07;
-alpha_or_0 = 20 * 1.3 * 1.2;
+alpha_pd_0 =  .75;
+alpha_or_0 = 20 * 1.3 * 1.2 / 0.0017;
+shift_or = -15;
+shift_pd = 30;
 
-interact_v_pd = circshift(interaction_v_pd, (18,0));
+# interact_v_pd = circshift(interaction_v_pd, (18,0));
 
 angle_array = sort(vcat([0:20:180;],[45, 135]))
 
@@ -77,32 +79,36 @@ function loss_spectrum_single!(interact_v::Array{Float64,2},
     discretization::Discretization,
     elec::Electron)
         
-    f_t = mod_eels.calculate_ft(discretization, interact_v , elec);
+    @time f_t = mod_eels.calculate_ft(discretization, interact_v , elec);
     
-    psi = mod_eels.calculate_psi_coherent(dis_sp, elec, f_t);
-    psi_sub = mod_eels.psi_subsampled(numericalp.subsampling_factor,psi, e_w);
+    @time psi = mod_eels.calculate_psi_coherent(dis_sp, elec, f_t);
+    @time psi_sub = mod_eels.psi_subsampled(numericalp.subsampling_factor,psi, e_w);
     
-    psi_incoherent = mod_eels.incoherent_convolution_fast(psi_sub, w, t_w, e_w);
+    @time psi_incoherent = mod_eels.incoherent_convolution_fast(psi_sub, w, t_w, e_w);
 
     return psi_sub, psi_incoherent
 end
 
-psi_sub_array = zeros(length(t_w),length(e_w),length(angle_array));
-psi_incoherent_array = zeros(length(t_w),length(e_w),length(angle_array));
+# psi_sub_array = zeros(length(t_w),length(e_w),length(angle_array));
+# psi_incoherent_array = zeros(length(t_w),length(e_w),length(angle_array));
 
-for (ind, angle) in enumerate(angle_array)
+# for (ind, angle) in enumerate(angle_array)
     
     
-    interact_v = alpha_or_0 .* circshift(v_struct["angle_"*string(angle)], (-15,0)) .+
-    alpha_pd_0 .* interact_v_pd;
+#     interact_v = alpha_or_0 .* circshift(v_struct["angle_"*string(angle)], (-15,0)) .+
+#     alpha_pd_0 .* interact_v_pd;
     
-    @time loss_spectrum!(psi_sub_array,
-    psi_incoherent_array,ind,interact_v, dis_sp, elec)
+#     @time loss_spectrum!(psi_sub_array,
+#     psi_incoherent_array,ind,interact_v, dis_sp, elec)
     
-end
+# end
+
+
 # @code_warntype loss_spectrum!(psi_sub_array, psi_incoherent_array,5,interact_v_pd, dis_sp, elec);
-alpha_pd_0 =  .03;
-alpha_or_0 = 10 * 1.3 * 1.2;
+alpha_pd_0 =  .5;
+alpha_or_0 = 20 * 1.3 * 1.2 / 0.0017;
+shift_or = -15;
+shift_pd = 30;
 
 # v_or = alpha_or_0 .* circshift(v_struct["angle_"*string(150)], (-15,0));
 # @time psi_sub_130, psi_incoherent_130 = loss_spectrum_single!(v_or, dis_sp, elec);
@@ -110,36 +116,63 @@ alpha_or_0 = 10 * 1.3 * 1.2;
 # v_pd = alpha_pd_0 .* circshift(v_struct["photodember"], (18,0));
 # @time psi_sub_pd0, psi_incoherent_pd0 = loss_spectrum_single!(v_pd, dis_sp, elec);
 
-v_or = alpha_or_0 .* circshift(v_struct["angle_"*string(150)], (0,0));
-@time psi_sub_130, psi_incoherent_130 = loss_spectrum_single!(v_or, dis_sp, elec);
+v_or = alpha_or_0 .* circshift(v_struct["angle_"*string(90)], (shift_or,0));
+psi_sub_130, psi_incoherent_130 = loss_spectrum_single!(v_or, dis_sp, elec);
 
 
-shift_array = 16:22;
+shift_array = [20];
 
 v_pd_array = zeros(size(v_or)...,length(shift_array))
 
-for (ind, shift) in enumerate(shift_array)
-    @time v_pd_array[:,:,ind] .= alpha_pd_0 .* circshift(v_struct["photodember"], (shift,0));
+function generate_v_pd_array!(v_pd_array::Array{Float64,3}, interaction_v_pd::Array{Float64,2},alpha_pd_0::Float64, shift_array::Array{Int64,1})
+
+    for (ind, shift) in enumerate(shift_array)
+        v_pd_array[:,:,ind] .= alpha_pd_0 .* circshift(interaction_v_pd, (shift,0));
+    end
+
 end
 
-size(v_pd_array)
+generate_v_pd_array!(v_pd_array, interaction_v_pd,alpha_pd_0,shift_array);
+
 psi_sub_comb_array = zeros(size(psi_sub_130)...,length(shift_array));
 psi_incoherent_comb_array = zeros(size(psi_incoherent_130)...,length(shift_array));
 psi_sub_pd_array = zeros(size(psi_sub_130)...,length(shift_array));
 psi_incoherent_pd_array = zeros(size(psi_incoherent_130)...,length(shift_array));
-;
-for (ind, _) in enumerate(shift_array)
-    @time psi_sub_comb, psi_incoherent_comb = loss_spectrum_single!(v_pd_array[:,:,ind].+v_or, dis_sp, elec);
-    psi_sub_comb_array[:,:,ind] = psi_sub_comb;
-    psi_incoherent_comb_array[:,:,ind] = psi_incoherent_comb;
 
-    @time psi_sub_pd, psi_incoherent_pd = loss_spectrum_single!(v_pd_array[:,:,ind], dis_sp, elec);
-    psi_sub_pd_array[:,:,ind] = psi_sub_pd;
-    psi_incoherent_pd_array[:,:,ind] = psi_incoherent_pd;
+function generate_psi_array!(psi_sub_comb_array::Array{Float64, 3},
+    psi_incoherent_comb_array::Array{Float64,3},
+    psi_sub_pd_array::Array{Float64,3},
+    psi_incoherent_pd_array::Array{Float64,3},
+    v_pd_array::Array{Float64,3}, 
+    v_or::Array{Float64,2},
+    dis_sp::Discretization, 
+    elec::Electron, 
+    shift_array::Array{Int64,1})
+
+    for (ind, _) in enumerate(shift_array)
+        psi_sub_comb, psi_incoherent_comb = loss_spectrum_single!(v_pd_array[:,:,ind].+v_or, dis_sp, elec);
+        psi_sub_comb_array[:,:,ind] = psi_sub_comb;
+        psi_incoherent_comb_array[:,:,ind] = psi_incoherent_comb;
+
+        psi_sub_pd, psi_incoherent_pd = loss_spectrum_single!(v_pd_array[:,:,ind], dis_sp, elec);
+        psi_sub_pd_array[:,:,ind] = psi_sub_pd;
+        psi_incoherent_pd_array[:,:,ind] = psi_incoherent_pd;
+    end
+
 end
 
+generate_psi_array!(psi_sub_comb_array,
+    psi_incoherent_comb_array,
+    psi_sub_pd_array,
+    psi_incoherent_pd_array,
+    v_pd_array,
+    v_or,
+    dis_sp,
+    elec,
+    shift_array)
+
 plot_agg = [];
-gr(;size=(500,1000))
+gr(;size=(1000,2000))
 p_rect = heatmap(e_w, t_w .- 0.2, psi_sub_130, c =:jet, 
 aspect_ratio = 9/2.5,
 xlims=[-4.5,4.5],
@@ -183,8 +216,51 @@ for (ind, _) in enumerate(shift_array)
 
 end
 
-plo = plot(plot_agg...,layout=(7,3))
-display(plo)
-default(show=true)
+p_rect = heatmap(e_w, t_w .- 0.2, psi_incoherent_130, c =:jet, 
+aspect_ratio = 9/2.5,
+xlims=[-4.5,4.5],
+ylims=[-1,1.5],
+colorbar=false,
+xaxis=true,
+yaxis=true,
+right_margin = 0Plots.mm,
+bottom_margin = -10Plots.mm);
+yflip!(true);
 
-gui(plo)
+for (ind, _) in enumerate(shift_array)
+    print(ind)
+    p_pd = heatmap(e_w, t_w .- 0.2, psi_incoherent_pd_array[:,:,ind], c =:jet, 
+    aspect_ratio = 9/2.5,
+    xlims=[-4.5,4.5],
+    ylims=[-1,1.5],
+    colorbar=false,
+    xaxis=(ind==length(shift_array) ? true : false),
+    yaxis=false,
+    right_margin = 0Plots.mm,
+    bottom_margin = -10Plots.mm);
+    yflip!(true);
+    
+
+    p = heatmap(e_w, t_w .- 0.2, psi_incoherent_comb_array[:,:,ind], c =:jet, 
+    aspect_ratio = 9/2.5,
+    xlims=[-4.5,4.5],
+    ylims=[-1,1.5],
+    colorbar=false,
+    xaxis=(ind==length(shift_array) ? true : false),
+    yaxis=false,
+    right_margin = 0Plots.mm,
+    bottom_margin = -10Plots.mm);
+    yflip!(true);
+    
+
+    push!(plot_agg,p_rect);
+    push!(plot_agg,p_pd);
+    push!(plot_agg,p);
+
+end
+
+plo = plot(plot_agg...,layout=(length(shift_array)*2,3))
+# display(plo)
+# default(show=true)
+
+# gui(plo)

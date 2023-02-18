@@ -234,10 +234,10 @@ module cdem_julia
 
         end
         
-        function space_grid(xprime::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64}},
-            yprime::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64}},
-            zprime::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64}},
-            z::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64}})
+        function space_grid(xprime::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64,1}},
+            yprime::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64,1}},
+            zprime::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64,1}},
+            z::Union{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64},Array{Float64,1}})
             
             XPRIME = [i for i in xprime, _ in yprime, _ in zprime, _ in z]
             YPRIME = [i for _ in xprime, i in yprime, _ in zprime, _ in z]
@@ -294,19 +294,19 @@ module cdem_julia
 
         function calculate_omega_y(mat::Material, n_exc::Float64,
             yprime_grid::Array{Float64,4}, gaussian_laser_spot::Array{Float64,4})
-            # consts = constants_fundamental();
+            
             Q_E = mod_physicalconstants.Q_E;
             
             omega_y = sqrt.( (Q_E^2/mat.kappa).*(n_exc.*gaussian_laser_spot.*exp.(-mat.alpha.*yprime_grid).*
             (1/mat.me0tilda+1/mat.mh) .+ mat.n_eq/mat.m_eq) .- (mat.gamma/2)^2 );
-        
+            
             return omega_y
         end
 
 
         function excited_carriers(laser::Laser, alpha::Float64, hnew::Float64)
                 
-            # consts = constants_fundamental();
+            
             Q_E = mod_physicalconstants.Q_E;
             excited_volume = (pi/4)*laser.laser_spot_fwhm^2*alpha^(-1);#[m^3]
             n_exc = laser.pulse_energy/Q_E/hnew/excited_volume;#[m^-3]
@@ -317,7 +317,7 @@ module cdem_julia
         function IndiumArsenide()
             inas = Material()
             inas.alpha = 7e6;#[m^-1]
-            # consts = constants_fundamental();
+            
             EPSILON_0 = mod_physicalconstants.EPSILON_0;
             M_E = mod_physicalconstants.M_E;
             inas.kappa = 12.3*EPSILON_0;
@@ -331,12 +331,18 @@ module cdem_julia
             inas.eg = 0.354;#[eV]
             inas.alpha_gamma = 2.2;#[eV^-1]
             inas.n_eq = 1e17*1e6;#[m^-3]#From resistivity measurement!
-            inas.m_eq = inas.mh;#p-type InAs
+            inas.m_eq = mass_equilibrium_carrier(inas); #p-type InAs
             inas.epsilon_e = photoexcited_electron_energy(inas);
             inas.v_t = velocity_t(inas);
             inas.me0tilda = photoelectron_mass(inas);
             inas.d14 = 237.6e-12;#[V/m]
             return inas
+        end
+
+        function mass_equilibrium_carrier(mat::Material)
+            # %METHOD1 Summary of this method goes here
+            # %   Detailed explanation goes here
+            return mat.mh
         end
 
         function photoexcited_electron_energy(mat::Material)
@@ -443,7 +449,7 @@ module cdem_julia
         end
 
 
-        function energy_time_grid(utem_parameters::Electron, sub_sample_factor::Int, energy::Array{Float64}, deltat::Array{Float64})
+        function energy_time_grid(utem_parameters::Electron, sub_sample_factor::Int, energy::Array{Float64,1}, deltat::Array{Float64,1})
             
             e_w = energy[1:sub_sample_factor:end];
             t_w = deltat*1e12;#[ps]
@@ -476,6 +482,7 @@ module cdem_julia
     module mod_cdem
 
         using Trapz, Interpolations
+        
         using ..mod_physicalconstants, ..mod_customtypes, ..mod_material, ..mod_laser, ..mod_electron
         export interaction_potential_photodember, interaction_potential_rectification
 
@@ -570,7 +577,7 @@ module cdem_julia
             laser_spot_sigma::Float64,
             theta_pol::Float64)
 
-            factor_rho=(1/(4*pi*EPSILON_0)).*green_kernel.*(1/sqrt(3.0)).*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*
+            factor_rho = @. (1/(4*pi*EPSILON_0)).*green_kernel.*(1/sqrt(3.0)).*d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*
             ((2*sqrt(2)/laser_spot_sigma^2).*(discretization.XPRIME.*sin(2*theta_pol)+discretization.ZPRIME.*cos(2*theta_pol)) .- alpha)
             factor_a=d14*e0_squared.*laser_xz.*exp.(-alpha.*discretization.YPRIME).*(2.0/sqrt(6.0)).*cos(2*theta_pol).*(MU_0/(4*pi)).*green_kernel
             factor_rho_Y0=(1/(4*pi*EPSILON_0))*(1/sqrt(3)).*d14*e0_squared.*laser_xz.*green_kernel
@@ -581,7 +588,7 @@ module cdem_julia
         end
 
         function calculate_laser_xz(discretization::Discretization, laser_spot_sigma::Float64)
-            return exp.(-(discretization.XPRIME.^2 .+ discretization.ZPRIME.^2)./(laser_spot_sigma.^2)).*
+            return @. exp.(-(discretization.XPRIME.^2 .+ discretization.ZPRIME.^2)./(laser_spot_sigma.^2)).*
             (discretization.ZPRIME .<= discretization.z_max) .* (discretization.ZPRIME .>= -discretization.z_max);
         end
 
@@ -634,10 +641,14 @@ module cdem_julia
             # 0.5e-12,
             # final_params.laser_pulse_time_sigma*0.5)
             
-            laser_t = calculate_laser_t(t_prime,
+            # laser_t = calculate_laser_t(t_prime,
+            # final_params.t0,
+            # final_params.laser_pulse_time_sigma)
+            
+            laser_t = calculate_laser_t_triple(t_prime,
             final_params.t0,
             final_params.laser_pulse_time_sigma)
-            
+
             dPhidA = calculate_internal(t_prime,
             final_params.t0,final_params.laser_pulse_time_sigma,
             final_params.factors_rect.factor_rho,final_params.factors_rect.factor_a,
@@ -646,7 +657,7 @@ module cdem_julia
             dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,final_params.y0_ind,final_params.mz0_ind, final_params.pz0_ind,
                 final_params.factors_rect.factor_rho_Y0,final_params.factors_rect.factor_rho_Z0)
 
-            @inbounds interaction_v[time_ind,:] .= trapz((final_params.xprime,final_params.yprime,final_params.zprime,:),(dPhidA)) .+
+            @inbounds interaction_v[time_ind,:] .= @. trapz((final_params.xprime,final_params.yprime,final_params.zprime,:),(dPhidA)) .+
                 trapz((final_params.xprime,final_params.zprime,:), dPhi_Y0) .+ trapz((final_params.xprime,final_params.yprime,:),dPhi_Z0)
 
 
@@ -689,22 +700,47 @@ module cdem_julia
         
         function calculate_laser_t(t_prime::Array{Float64,4},
             t0::Float64,
-            laser_pulse_time_sigma::Float64)
-            return exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
+            laser_pulse_time_sigma::Float64)::Array{Float64,4}
+            return @. exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma.^2));
         end
 
-        function calculate_t_prime(t_c_subsampled_i::Float64, t_r::Array{Float64,4})
+        function calculate_laser_t_triple(t_prime::Array{Float64,4},
+            t0::Float64,
+            laser_pulse_time_sigma::Float64)::Array{Float64,4}
 
-            return  t_c_subsampled_i .- t_r;
+            return  @. exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma^2)) .+
+            0.2.*exp.(-(t_prime.-t0).^2 ./ ((laser_pulse_time_sigma*2.5)^2)).+
+            0.2.*exp.(-(t_prime .- 0.5e-12).^2 ./ ((laser_pulse_time_sigma*0.5)^2));
+        end
+
+        # function calculate_laser_t_triple(t_prime::Array{Float64,4},
+        #     t0::Float64,
+        #     laser_pulse_time_sigma::Float64)::Array{Float64,4}
+
+        #     return gaussian_t(t_prime, t0, laser_pulse_time_sigma) .+ 0.2.* gaussian_t(t_prime, t0, laser_pulse_time_sigma*2.5) .+ 
+        #     .+ 0.2.* gaussian_t(t_prime, 0.5e-12, laser_pulse_time_sigma*0.5);
+        # end
+
+        # function gaussian_t(t_prime::Array{Float64,4},
+        #     t0::Float64,
+        #     laser_pulse_time_sigma::Float64)::Array{Float64,4}
+
+        #     return exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma^2))
+
+        # end
+
+        function calculate_t_prime(t_c_subsampled_i::Float64, t_r::Array{Float64,4})::Array{Float64,4}
+
+            return  @. t_c_subsampled_i .- t_r;
 
         end
 
 
 
         function calculate_internal(t_prime::Array{Float64,4},t0::Float64,laser_pulse_time_sigma::Float64,
-            factor_rho::Array{Float64,4},factor_a::Array{Float64,4},laser_t::Array{Float64,4}, electron_velocity::Float64)
+            factor_rho::Array{Float64,4},factor_a::Array{Float64,4},laser_t::Array{Float64,4}, electron_velocity::Float64)::Array{Float64,4}
 
-            return factor_rho .* laser_t .- electron_velocity.*factor_a.*laser_t.*( -2.0 .*(t_prime .- t0)./laser_pulse_time_sigma.^2)
+            return @. factor_rho .* laser_t .- electron_velocity.*factor_a.*laser_t.*( -2.0 .*(t_prime .- t0)./laser_pulse_time_sigma.^2)
         
         end
 
@@ -731,7 +767,7 @@ module cdem_julia
         end
 
         function interaction_potential_photodember(discretization::Discretization, material::Material, laser::Laser ,
-            numerical_parameters::NumericalParameters)
+            numerical_parameters::NumericalParameters; cutOff::Float64 = 0.0)
             # %METHOD1 Summary of this method goes here
             # %   Detailed explanation goes here
 
@@ -746,6 +782,7 @@ module cdem_julia
             z = discretization.z;
 
             interaction_v =  zeros(length(t_c_subsampled),length(discretization.z));
+            # interaction_v = SharedArray{Float64,2}(length(t_c_subsampled),length(discretization.z))
 
             green_kernel  = calculate_green_kernel(discretization);
             
@@ -767,12 +804,12 @@ module cdem_julia
             gamma_factor = material.gamma_factor;
 
 
-            YPP_GK_g1 = (Q_E*alpha*v_t^2*
+            YPP_GK_g1 = @. (Q_E*alpha*v_t^2*
             n_exc.*gaussian_laser_spot.*exp.(-alpha.*discretization.YPRIME)./(omega_y.*(gamma^2 .+ 4*omega_y.^2))).*
             (discretization.y0 .- discretization.YPRIME).*green_kernel;
             
             threaded_calculation!(l_tc, interaction_v, discretization.xprime, discretization.yprime, discretization.zprime, 
-            omega_y, t_c_subsampled, t_r, phase, gamma, gamma_factor, YPP_GK_g1)
+            omega_y, t_c_subsampled, t_r, phase, gamma, gamma_factor, YPP_GK_g1; cut0ff=cutOff)
 
             intf = linear_interpolation((vec(t_c_subsampled),[1:size(interaction_v)[2];]), interaction_v,extrapolation_bc=Flat());
             interaction_v = transpose([intf(x,y) for x in t_c, y in [1:size(interaction_v)[2];] ]);
@@ -784,8 +821,8 @@ module cdem_julia
         end
 
         function calculate_gaussian_laser_spot(XPRIME::Array{Float64,4}, ZPRIME::Array{Float64,4},
-            laser_spot_sigma::Float64,zprime::Array{Float64},z_max::Float64)
-            gaussian_laser_spot = exp.(-(XPRIME.^2+ZPRIME.^2)./(2*laser_spot_sigma.^2));
+            laser_spot_sigma::Float64,zprime::Array{Float64,1},z_max::Float64)
+            gaussian_laser_spot = @. exp.(-(XPRIME.^2+ZPRIME.^2)./(2*laser_spot_sigma.^2));
             gaussian_laser_spot[:,:,abs.(vec(zprime)) .> z_max,:] .= 0.0;
             return gaussian_laser_spot
         end
@@ -796,57 +833,60 @@ module cdem_julia
             
             
             C = mod_physicalconstants.C;
-            return (1/C)*sqrt.((x0 .- XPRIME).^2+(y0 .- YPRIME).^2+(Z .- ZPRIME).^2);
+            return @. (1/C).*sqrt.((x0 .- XPRIME).^2+(y0 .- YPRIME).^2+(Z .- ZPRIME).^2);
 
         end
 
-        function integrate_v!(interaction_v::Array{Float64,2}, ind::Int, 
-            dx::Array{Float64}, dy::Array{Float64}, dz::Array{Float64}, integrand::Array{Float64})
+        function integrate_v!(interaction_v::Array{Float64,2}, ind::Int64, 
+            dx::Array{Float64,1}, dy::Array{Float64,1}, dz::Array{Float64,1}, integrand::Array{Float64,4})
 
             
             EPSILON_0 = mod_physicalconstants.EPSILON_0;
 
-            interaction_v[ind,:] .= (1/(4*pi*EPSILON_0)).*trapz((dx,dy,dz,:),
+            @inbounds interaction_v[ind,:] .= (1/(4*pi*EPSILON_0)).*trapz((dx,dy,dz,:),
             integrand)
 
         end
 
-        function calculate_g2(omega_y::Array{Float64}, t_prime::Array{Float64}, phase::Float64, gamma::Float64, gamma_factor::Float64)
-
-            g = (4.0 .* omega_y.*cos.(omega_y.*t_prime .+ phase).+2.0*gamma.*sin.(omega_y.*t_prime .+ phase)) .*
+  
+        function calculate_g2(omega_y::Array{Float64,4}, t_prime::Array{Float64,4}, phase::Float64, gamma::Float64, gamma_factor::Float64; cut0ff::Float64=0.0)
+            
+            g = @. (4.0 .* omega_y.*cos.(omega_y.*t_prime .+ phase).+2.0*gamma.*sin.(omega_y.*t_prime .+ phase)) .*
             exp.(-gamma.*gamma_factor.*t_prime./2.0);
 
-            # g[t_prime.<0] .= 0.0
+            g[t_prime.<cut0ff] .= 0.0
 
             return g
         end
 
         function calculate_green_kernel_rectification(discretization::Discretization)
-            return((discretization.x0 .- discretization.XPRIME).^2 .+ 
+            return @. ((discretization.x0 .- discretization.XPRIME).^2 .+ 
                 (discretization.y0 .- discretization.YPRIME).^2 .+ (discretization.Z .- discretization.ZPRIME).^2).^(-1/2);
         end
 
         function calculate_green_kernel(discretization::Discretization)
             # %METHOD1 Summary of this method goes here
             # %   Detailed explanation goes here
-            return((discretization.x0 .- discretization.XPRIME).^2 .+ 
+            return @. ((discretization.x0 .- discretization.XPRIME).^2 .+ 
                 (discretization.y0 .- discretization.YPRIME).^2 .+ (discretization.Z .- discretization.ZPRIME).^2).^(-3/2);
         end
 
-        function threaded_calculation!(n::Int, interaction_v::Array{Float64,2}, xprime::Array{Float64}, yprime::Array{Float64}, zprime::Array{Float64}, 
-            omega_y::Array{Float64}, t_c_subsampled::Array{Float64}, t_r::Array{Float64}, phase::Float64, gamma::Float64, gamma_factor::Float64, YPP_GK_g1::Array{Float64})
+        function threaded_calculation!(n::Int, interaction_v::Array{Float64,2}, xprime::Array{Float64,1}, yprime::Array{Float64,1}, zprime::Array{Float64,1}, 
+            omega_y::Array{Float64,4}, t_c_subsampled::Array{Float64,1}, t_r::Array{Float64,4}, phase::Float64, gamma::Float64, gamma_factor::Float64, YPP_GK_g1::Array{Float64,4};cut0ff::Float64=0.0)
             
-            Threads.@threads for time_ind in 1:n
+            @inbounds Threads.@threads for time_ind in 1:n
 
                 # if(mod(time_ind,10)==0)
                 #     print("$(time_ind) out of $(n) \n")
                 # end
 
                 integrate_v!(interaction_v, time_ind, xprime,yprime,zprime,
-                calculate_g2(omega_y, t_c_subsampled[time_ind] .- t_r, phase, gamma, gamma_factor).*YPP_GK_g1)
+                calculate_g2(omega_y, t_c_subsampled[time_ind] .- t_r, phase, gamma, gamma_factor; cut0ff = cut0ff).*YPP_GK_g1)
 
             end
         end
+
+       
 
     end
 
@@ -854,6 +894,7 @@ module cdem_julia
 
         using ..mod_customtypes, ..mod_electron, ..mod_physicalconstants, ..mod_utils
         using FFTW
+        # FFTW.set_num_threads(8)
         using ThreadsX 
         using Trapz
 
@@ -882,7 +923,7 @@ module cdem_julia
             return transpose(exp.(-circshift(t_map,(ceil(length(t)/2)))));
         end
 
-        function ft_beta(interact_v::Array{Float64,2}, t::Array{Float64}, 
+        function ft_beta(interact_v::Array{Float64,2}, t::Array{Float64,1}, 
             omega::Array{Float64,1}, z::Array{Float64,1}, 
             deltaz::Float64, electron_velocity::Float64)::Array{ComplexF64,1}
             return vec(sum(fftshift(fft2(interact_v,length(t)),(2,))./maximum(omega).*[exp(-1.0im*omg*zz/electron_velocity) for zz in z, omg in omega], dims = 1).*deltaz)
@@ -903,7 +944,7 @@ module cdem_julia
             return 2.0.*real.(exp.(1.0im.*omega.*tt).*beta)
         end
 
-        function incoherent_convolution_fast(psi::Array{Float64}, w::AbstractArray{Float64}, t_w::Array{Float64}, e_w::Array{Float64} ,
+        function incoherent_convolution_fast(psi::Array{Float64,2}, w::AbstractArray{Float64,2}, t_w::Array{Float64,1}, e_w::Array{Float64,1} ,
             w_cut_off_factor::Float64 = 0.01)
 
             ThreadsX.map!(x->isnan(x) ? 0.0 : x, psi,psi)
@@ -925,7 +966,7 @@ module cdem_julia
 
         end
 
-        function incoherent_convolution_fast(psi::SubArray{Float64, 2, Array{Float64, 3}}, w::AbstractArray{Float64}, t_w::Array{Float64}, e_w::Array{Float64} ,
+        function incoherent_convolution_fast(psi::SubArray{Float64, 2, Array{Float64, 3}}, w::AbstractArray{Float64,2}, t_w::Array{Float64,1}, e_w::Array{Float64,1} ,
             w_cut_off_factor::Float64 = 0.01)
 
             ThreadsX.map!(x->isnan(x) ? 0.0 : x, psi,psi)
@@ -947,9 +988,9 @@ module cdem_julia
 
         end
 
-        function incoherent_circ!(psi_sum::Array{Float64}, w::Array{Float64}, w_cutOff::Float64,
-            psi::Array{Float64}, t_w::Array{Float64}, 
-            e_w::Array{Float64}, k::Int, l_t_w::Int, l_e_w::Int)
+        function incoherent_circ!(psi_sum::Array{Float64,2}, w::Array{Float64,2}, w_cutOff::Float64,
+            psi::Array{Float64,2}, t_w::Array{Float64,1}, 
+            e_w::Array{Float64,1}, k::Int, l_t_w::Int, l_e_w::Int)
 
             t_ind,e_ind = index_calculator_2d(k, l_t_w, l_e_w)
 
@@ -957,7 +998,7 @@ module cdem_julia
 
         end
 
-        function incoherent_convolution(psi::Array{Float64}, w::AbstractArray{Float64}, t_w::Array{Float64}, e_w::Array{Float64} ,
+        function incoherent_convolution(psi::Array{Float64,2}, w::AbstractArray{Float64,2}, t_w::Array{Float64,1}, e_w::Array{Float64,1} ,
             w_cut_off_factor::Float64 = 0.01)
 
             psi_sum = zeros(size(psi));
@@ -993,7 +1034,7 @@ module cdem_julia
 
         end
 
-        function calculate_psi_coherent(discretization::Discretization,elec::Electron, f_t::Union{Matrix{ComplexF64},
+        function calculate_psi_coherent_old(discretization::Discretization,elec::Electron, f_t::Union{Matrix{ComplexF64},
             AbstractArray{ComplexF64}})
                     
             deltat = discretization.deltat;
@@ -1005,11 +1046,12 @@ module cdem_julia
             TT = repeat(t,outer=(1,length(deltat)))' .- repeat(deltat,outer = (1,length(t)));
             FT = repeat(f_t,outer = (length(deltat),1));
             
+
             # psi_coherent = FT.*exp.(-(t_rep.-delta_t_rep).^2.0 ./ (2.0*elec.electron_time_coherent_sigma^2));
             psi_coherent = FT.*exp.(-(TT).^2 ./ (2.0*elec.electron_time_coherent_sigma^2));
-
             psi_coherent = abs2.(fftshift(fft2(psi_coherent,length(t)),(2,)));
-            
+            # copy!(psi_coherent,abs2.(fftshift(fft2(psi_coherent,length(t)),(2,))));
+           
             # psi_coherent = (abs.(psi_coherent)).^2;
             
             return psi_coherent./trapz((:,discretization.energy),psi_coherent);
@@ -1018,7 +1060,38 @@ module cdem_julia
             
         end
 
-        function fft2(a::Union{AbstractArray{Float64},Matrix{ComplexF64}}, n::Int64=size(a,2))
+        function calculate_psi_coherent(discretization::Discretization,elec::Electron, f_t::Union{Matrix{ComplexF64},
+            AbstractArray{ComplexF64,2}})
+                    
+            t_len = length(discretization.t);
+            deltat_len = length(discretization.deltat);
+            TT = repeat(discretization.t,outer=(1,deltat_len))' .- repeat(discretization.deltat,outer = (1,t_len));
+            FT = repeat(f_t,outer = (deltat_len,1)).*exp.(-(TT).^2 ./ (2.0*elec.electron_time_coherent_sigma^2));
+
+            psi_coherent_r = zeros(size(TT));
+            abs2fftshift!(psi_coherent_r, FT, t_len)
+            return psi_coherent_r./trapz((:,discretization.energy),psi_coherent_r);
+  
+            
+        end
+        
+        function abs2fftshift!(psi_coherent_r::Array{Float64,2}, psi_coherent::Array{ComplexF64,2}, n::Int64)
+            copy!(psi_coherent_r , abs2.(fftshift(fft2(psi_coherent,n),(2,))));
+        end
+
+
+        # function fft2(a::Union{AbstractArray{Float64},Matrix{ComplexF64}}, n::Int64=size(a,2))
+        #     if n <= size(a,2)
+        #         return fft(a[:,1:n],(2,))
+        #     else
+        #         A = zeros(size(a,1),n)
+        #         @views A[:,1:size(a,2)] .= a
+        #         return fft(A,(2,))
+        #     end
+                
+        # end
+
+        function fft2(a::Array{ComplexF64,2}, n::Int64=size(a,2))
             if n <= size(a,2)
                 return fft(a[:,1:n],(2,))
             else
@@ -1028,6 +1101,20 @@ module cdem_julia
             end
                 
         end
+
+        function fft2(a::Array{Float64,2}, n::Int64=size(a,2))
+            if n <= size(a,2)
+                return fft(a[:,1:n],(2,))
+            else
+                A = zeros(size(a,1),n)
+                @views A[:,1:size(a,2)] .= a
+                return fft(A,(2,))
+            end
+                
+        end
+
+
+
 
     end
 end
