@@ -1,6 +1,7 @@
 include("./init_2.jl")
 
-base="analysis_photodember/saved-matrices/interact_v_low_power_triple_pulse"
+las_pulse = 650
+base="analysis_photodember/saved-matrices/interact_v_1alpha" * string("_",Int(las_pulse),"fs")
 
 v_struct = load(base*".jld2");
 
@@ -13,10 +14,10 @@ interaction_v_pd = v_struct["photodember"]
 # alpha_pd_0 =  .07;
 # alpha_or_0 = 20 * 1.3 * 1.2;
 
-alpha_pd_0 =  .5;
-alpha_or_0 = 20 * 1.3 * 1.2 / 0.0017;
+alpha_pd_0 =  .07;
+alpha_or_0 = 20 * 1.3 * 1.2;
 shift_or = -15;
-shift_pd = 30;
+shift_pd = 18;
 
 interact_v_pd = circshift(interaction_v_pd, (shift_pd,0));
 

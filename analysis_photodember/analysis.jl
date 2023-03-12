@@ -3,12 +3,19 @@ include("./init_2.jl");
 w, e_w, t_w = mod_electron.energy_time_grid(elec,numericalp.subsampling_factor,dis_sp.energy, dis_sp.deltat);
 
 
-las_pulse_array = [50.0, 100.0, 150.0, 250.0, 450.0, 650.0]
+las_pulse_array = [650.0]
 # las_pulse_array = [50.0]
 
+alpha0 = mat.alpha
+
+# setproperty!(mat,Symbol("alpha"),1.2*alpha0)
+# mat.m_eq = mod_material.mass_equilibrium_carrier(mat);
+# mat.epsilon_e = mat.epsilon_e = mod_material.photoexcited_electron_energy(mat);
+# mat.v_t = mod_material.velocity_t(mat)
+# mat.me0tilda = mod_material.photoelectron_mass(mat)
 
 for las_pulse in las_pulse_array
-    base="analysis_photodember/saved-matrices/interact_v_low_power_single_pulse" * string("_",Int(las_pulse),"fs")
+    base="analysis_photodember/saved-matrices/interact_v_1alpha" * string("_",Int(las_pulse),"fs")
     angle_array = vcat([0:10:180;],[45 , 135])
     for angle in angle_array
         mod_laser.set_laser!(;laser = las,
@@ -25,11 +32,11 @@ for las_pulse in las_pulse_array
 
 end
 
-
-# @time t_c_subsampled, t_c, interaction_v_pd=mod_cdem.interaction_potential_photodember(dis_sp, mat, las, numericalp)
-# jldopen(base*".jld2", "a+"; compress = true) do f
-#     f["photodember"] = interaction_v_pd
-# end
+base="analysis_photodember/saved-matrices/interact_v_1alpha"*string("_",Int(las_pulse_array[1]),"fs")
+@time t_c_subsampled, t_c, interaction_v_pd=mod_cdem.interaction_potential_photodember(dis_sp, mat, las, numericalp)
+jldopen(base*".jld2", "a+"; compress = true) do f
+    f["photodember"] = interaction_v_pd
+end
 
 
 # @time _, _, interact_v=mod_cdem.interaction_potential_rectification(dis_sp, mat, las , elec, numericalp)

@@ -78,7 +78,7 @@ module cdem_julia
 
         export Discretization, NumericalParameters, FactorsRect, RectificationParameters
 
-        struct Discretization
+        mutable struct Discretization
             x0::Float64
             y0::Float64    
             xprime::Array{Float64,1}
@@ -613,16 +613,7 @@ module cdem_julia
 
         end
         
-        # function integrate_v_rectification!(interaction_v::Array{Float64,2}, dPhi::Array{Float64}, dA::Array{Float64}, 
-        #     electron_velocity::Float64,
-        #     dPhi_Y0::Array{Float64}, dPhi_Z0::Array{Float64}, time_ind::Int64,
-        #     xprime::Array{Float64}, yprime::Array{Float64}, zprime::Array{Float64})
-            
-        #     interaction_v[time_ind,:] .= trapz((xprime,yprime,zprime,:),(dPhi.-electron_velocity.*dA)) .+
-        #         trapz((xprime,zprime,:), dPhi_Y0) .+ trapz((xprime,yprime,:),dPhi_Z0)
-            
-        #     return nothing
-        # end
+
         
         function integrate_v_rectification!(interaction_v::Array{Float64,2},
             time_ind::Int64,
@@ -630,20 +621,6 @@ module cdem_julia
             final_params::RectificationParameters)
             
             t_prime = calculate_t_prime(t_c_subsampled_i, final_params.t_r)
-
-            # laser_t = calculate_laser_t(t_prime,
-            # final_params.t0,
-            # final_params.laser_pulse_time_sigma) .+ 
-            # 0.2.*calculate_laser_t(t_prime,
-            # final_params.t0,
-            # final_params.laser_pulse_time_sigma*2.5) .+
-            # 0.2.*calculate_laser_t(t_prime,
-            # 0.5e-12,
-            # final_params.laser_pulse_time_sigma*0.5)
-            
-            # laser_t = calculate_laser_t(t_prime,
-            # final_params.t0,
-            # final_params.laser_pulse_time_sigma)
             
             laser_t = calculate_laser_t_triple(t_prime,
             final_params.t0,
@@ -657,46 +634,13 @@ module cdem_julia
             dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,final_params.y0_ind,final_params.mz0_ind, final_params.pz0_ind,
                 final_params.factors_rect.factor_rho_Y0,final_params.factors_rect.factor_rho_Z0)
 
-            @inbounds interaction_v[time_ind,:] .= @. trapz((final_params.xprime,final_params.yprime,final_params.zprime,:),(dPhidA)) .+
+            @inbounds interaction_v[time_ind,:] .= trapz((final_params.xprime,final_params.yprime,final_params.zprime,:),(dPhidA)) .+
                 trapz((final_params.xprime,final_params.zprime,:), dPhi_Y0) .+ trapz((final_params.xprime,final_params.yprime,:),dPhi_Z0)
 
 
         end
 
-        # function integrate_v_rectification_combined!(interaction_v::Array{Float64,2},
-        #     electron_velocity::Float64,
-        #     time_ind::Int64,
-        #     xprime::Array{Float64,1}, 
-        #     yprime::Array{Float64,1}, 
-        #     zprime::Array{Float64,1},
-        #     t_r::Array{Float64,4},
-        #     t_c_subsampled_i::Float64,
-        #     t0::Float64,
-        #     laser_pulse_time_sigma::Float64,
-        #     factors_rect::FactorsRect,
-        #     y0_ind::Int64,
-        #     mz0_ind::Int64, 
-        #     pz0_ind::Int64)
-            
-        #     t_prime = calculate_t_prime(t_c_subsampled_i, t_r)
 
-        #     laser_t = calculate_laser_t(t_prime,
-        #     t0,
-        #     laser_pulse_time_sigma)
-
-        #     dPhidA = calculate_internal(t_prime,
-        #     t0,laser_pulse_time_sigma,
-        #     factors_rect.factor_rho,factors_rect.factor_a,
-        #     laser_t,electron_velocity)
-
-        #     dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,y0_ind,mz0_ind, pz0_ind,
-        #         factors_rect.factor_rho_Y0,factors_rect.factor_rho_Z0)
-
-        #     interaction_v[time_ind,:] .= trapz((xprime,yprime,zprime,:),(dPhidA)) .+
-        #         trapz((xprime,zprime,:), dPhi_Y0) .+ trapz((xprime,yprime,:),dPhi_Z0)
-
-
-        # end
         
         function calculate_laser_t(t_prime::Array{Float64,4},
             t0::Float64,
@@ -713,21 +657,6 @@ module cdem_julia
             0.2.*exp.(-(t_prime .- 0.5e-12).^2 ./ ((laser_pulse_time_sigma*0.5)^2));
         end
 
-        # function calculate_laser_t_triple(t_prime::Array{Float64,4},
-        #     t0::Float64,
-        #     laser_pulse_time_sigma::Float64)::Array{Float64,4}
-
-        #     return gaussian_t(t_prime, t0, laser_pulse_time_sigma) .+ 0.2.* gaussian_t(t_prime, t0, laser_pulse_time_sigma*2.5) .+ 
-        #     .+ 0.2.* gaussian_t(t_prime, 0.5e-12, laser_pulse_time_sigma*0.5);
-        # end
-
-        # function gaussian_t(t_prime::Array{Float64,4},
-        #     t0::Float64,
-        #     laser_pulse_time_sigma::Float64)::Array{Float64,4}
-
-        #     return exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma^2))
-
-        # end
 
         function calculate_t_prime(t_c_subsampled_i::Float64, t_r::Array{Float64,4})::Array{Float64,4}
 
