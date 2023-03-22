@@ -495,7 +495,7 @@ module cdem_julia
         function interaction_potential_rectification(discretization::Discretization, material::Material,
             laser::Laser , electron::Electron, numerical_parameters::NumericalParameters)
 
-            println(laser.pulse_type)
+            
             # # InAs parameters
             d14 = material.d14;
             alpha = material.alpha;
@@ -546,9 +546,6 @@ module cdem_julia
             laser_spot_sigma,
             theta_pol)
 
-            println(
-                
-            )
             rect_params = RectificationParameters(laser.pulse_type, laser_pulse_time_sigma,
             mz0_ind,
             pz0_ind,
@@ -627,9 +624,6 @@ module cdem_julia
 
                 Threads.@threads for time_ind in 1:n
                     println("Single Pulse")
-                    # if(mod(time_ind,10)==0)
-                    #     print("$(time_ind) out of $(n) \n")
-                    # end
 
                     integrate_v_rectification_single!(interaction_v,
                     time_ind,
