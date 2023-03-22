@@ -100,8 +100,8 @@ module cdem_julia
         end
 
         mutable struct NumericalParameters
-            tc_subsampling::Int
-            subsampling_factor::Int
+            tc_subsampling::Int64
+            subsampling_factor::Int64
         
             function NumericalParameters(;tc_subsampling::Int64, subsampling_factor::Int64)
                 return new(tc_subsampling, subsampling_factor)
@@ -119,6 +119,7 @@ module cdem_julia
         end
 
         struct RectificationParameters
+            laser_pulse_type::Bool
             laser_pulse_time_sigma::Float64
             mz0_ind::Int64
             pz0_ind::Int64
@@ -151,7 +152,7 @@ module cdem_julia
             pulse_energy::Float64
             laser_spot_sigma::Float64
             laser_pulse_time_sigma::Float64
-
+            pulse_type::Bool
             function Laser()
                 return new()
             end
@@ -163,7 +164,8 @@ module cdem_julia
             pulse_energy_gain_factor::Union{Float64,Nothing}=nothing,
             laser_spot_fwhm::Union{Float64,Nothing}=nothing,
             theta_pol::Union{Float64,Nothing}=nothing,
-            laser_pulse_time_fwhm::Union{Float64,Nothing}=nothing)
+            laser_pulse_time_fwhm::Union{Float64,Nothing}=nothing,
+            pulse_type::Union{Bool,Nothing}=nothing)
             
             if isnothing(laser)
                 laser = Laser()
@@ -195,6 +197,10 @@ module cdem_julia
             if !isnothing(laser_pulse_time_fwhm)
                 laser.laser_pulse_time_fwhm = laser_pulse_time_fwhm
                 laser.laser_pulse_time_sigma = mod_utils.calculate_sigma(laser.laser_pulse_time_fwhm)#[s]
+            end
+            
+            if !isnothing(pulse_type)
+                laser.pulse_type = pulse_type
             end
 
             return laser
@@ -449,7 +455,7 @@ module cdem_julia
         end
 
 
-        function energy_time_grid(utem_parameters::Electron, sub_sample_factor::Int, energy::Array{Float64,1}, deltat::Array{Float64,1})
+        function energy_time_grid(utem_parameters::Electron, sub_sample_factor::Int64, energy::Array{Float64,1}, deltat::Array{Float64,1})
             
             e_w = energy[1:sub_sample_factor:end];
             t_w = deltat*1e12;#[ps]
@@ -489,7 +495,7 @@ module cdem_julia
         function interaction_potential_rectification(discretization::Discretization, material::Material,
             laser::Laser , electron::Electron, numerical_parameters::NumericalParameters)
 
-        
+            println(laser.pulse_type)
             # # InAs parameters
             d14 = material.d14;
             alpha = material.alpha;
@@ -540,7 +546,10 @@ module cdem_julia
             laser_spot_sigma,
             theta_pol)
 
-            rect_params = RectificationParameters(laser_pulse_time_sigma,
+            println(
+                
+            )
+            rect_params = RectificationParameters(laser.pulse_type, laser_pulse_time_sigma,
             mz0_ind,
             pz0_ind,
             factors_rect,
@@ -598,16 +607,36 @@ module cdem_julia
             rect_params::RectificationParameters)
 
             n = rect_params.l_tc
-            Threads.@threads for time_ind in 1:n
 
-                # if(mod(time_ind,10)==0)
-                #     print("$(time_ind) out of $(n) \n")
-                # end
+            if (rect_params.laser_pulse_type) 
+                println("Triple Pulse")
+                Threads.@threads for time_ind in 1:n
 
-                integrate_v_rectification!(interaction_v::Array{Float64,2},
-                time_ind,
-                rect_params.t_c_subsampled[time_ind],
-                rect_params::RectificationParameters)
+                    # if(mod(time_ind,10)==0)
+                    #     print("$(time_ind) out of $(n) \n")
+                    # end
+
+                    integrate_v_rectification_triple!(interaction_v,
+                    time_ind,
+                    rect_params.t_c_subsampled[time_ind],
+                    rect_params)
+
+                end
+
+            else 
+
+                Threads.@threads for time_ind in 1:n
+                    println("Single Pulse")
+                    # if(mod(time_ind,10)==0)
+                    #     print("$(time_ind) out of $(n) \n")
+                    # end
+
+                    integrate_v_rectification_single!(interaction_v,
+                    time_ind,
+                    rect_params.t_c_subsampled[time_ind],
+                    rect_params)
+
+                end
 
             end
 
@@ -615,16 +644,19 @@ module cdem_julia
         
 
         
-        function integrate_v_rectification!(interaction_v::Array{Float64,2},
+        function integrate_v_rectification_triple!(interaction_v::Array{Float64,2},
             time_ind::Int64,
             t_c_subsampled_i::Float64,
             final_params::RectificationParameters)
             
             t_prime = calculate_t_prime(t_c_subsampled_i, final_params.t_r)
             
+
             laser_t = calculate_laser_t_triple(t_prime,
             final_params.t0,
             final_params.laser_pulse_time_sigma)
+        
+
 
             dPhidA = calculate_internal(t_prime,
             final_params.t0,final_params.laser_pulse_time_sigma,
@@ -640,6 +672,33 @@ module cdem_julia
 
         end
 
+
+        function integrate_v_rectification_single!(interaction_v::Array{Float64,2},
+            time_ind::Int64,
+            t_c_subsampled_i::Float64,
+            final_params::RectificationParameters)
+            
+            t_prime = calculate_t_prime(t_c_subsampled_i, final_params.t_r)
+            
+        
+            laser_t = calculate_laser_t(t_prime,
+            final_params.t0,
+            final_params.laser_pulse_time_sigma)
+        
+
+            dPhidA = calculate_internal(t_prime,
+            final_params.t0,final_params.laser_pulse_time_sigma,
+            final_params.factors_rect.factor_rho,final_params.factors_rect.factor_a,
+            laser_t,final_params.electron_velocity)
+
+            dPhi_Y0, dPhi_Z0 = calculate_boundaries(laser_t,final_params.y0_ind,final_params.mz0_ind, final_params.pz0_ind,
+                final_params.factors_rect.factor_rho_Y0,final_params.factors_rect.factor_rho_Z0)
+
+            @inbounds interaction_v[time_ind,:] .= trapz((final_params.xprime,final_params.yprime,final_params.zprime,:),(dPhidA)) .+
+                trapz((final_params.xprime,final_params.zprime,:), dPhi_Y0) .+ trapz((final_params.xprime,final_params.yprime,:),dPhi_Z0)
+
+
+        end
 
         
         function calculate_laser_t(t_prime::Array{Float64,4},
@@ -657,6 +716,15 @@ module cdem_julia
             0.2.*exp.(-(t_prime .- 0.5e-12).^2 ./ ((laser_pulse_time_sigma*0.5)^2));
         end
 
+        function calculate_laser_t_3(t_prime::Array{Float64,4},
+            t0::Float64,
+            laser_pulse_time_sigma::Float64)::Array{Float64,4}
+
+            return  @. exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma^2)) .+
+            0.2.*exp.(-(t_prime.-t0).^2 ./ ((laser_pulse_time_sigma*2.5)^2)).+
+            0.2.*exp.(-(t_prime .- 0.1e-12).^2 ./ ((laser_pulse_time_sigma*0.5)^2));
+        end
+
 
         function calculate_t_prime(t_c_subsampled_i::Float64, t_r::Array{Float64,4})::Array{Float64,4}
 
@@ -665,6 +733,17 @@ module cdem_julia
         end
 
 
+        # function calculate_internal(t_prime::Array{Float64,4},t0::Float64,laser_pulse_time_sigma::Float64,
+        #     factor_rho::Array{Float64,4},factor_a::Array{Float64,4},laser_t::Array{Float64,4}, electron_velocity::Float64)::Array{Float64,4}
+
+        #     return @. factor_rho .* laser_t .- 
+        #     electron_velocity.*factor_a.*
+        #     (exp.(-(t_prime.-t0).^2 ./ (laser_pulse_time_sigma^2)) .*( -2.0 .*(t_prime .- t0)./laser_pulse_time_sigma.^2) .+
+        #     0.2.*exp.(-(t_prime.-t0).^2 ./ ((laser_pulse_time_sigma*2.5)^2)) .*( -2.0 .*(t_prime .- t0)./(laser_pulse_time_sigma*2.5).^2).+
+        #     0.2.*exp.(-(t_prime .- 0.1e-12).^2 ./ ((laser_pulse_time_sigma*0.5)^2)).*( -2.0 .*(t_prime .- 0.1e-12)./(laser_pulse_time_sigma*0.5).^2))
+
+        
+        # end
 
         function calculate_internal(t_prime::Array{Float64,4},t0::Float64,laser_pulse_time_sigma::Float64,
             factor_rho::Array{Float64,4},factor_a::Array{Float64,4},laser_t::Array{Float64,4}, electron_velocity::Float64)::Array{Float64,4}

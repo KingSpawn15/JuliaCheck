@@ -1,5 +1,7 @@
 using LaTeXStrings
-    
+using DataFrames
+using CSV
+
 function loss_spectrum!(psi_sub_array::Array{Float64,3},
     psi_incoherent_array::Array{Float64,3},
     ind::Int64,
@@ -99,3 +101,76 @@ function my_heatmap(e_w::Array{Float64,1}, t_w::Array{Float64,1}, psi::Array{Flo
 
     return p
 end
+
+function save_to_database(directory::String, database_name::String, simulation_name::String, 
+    dis_sp::Discretization, las::Laser, numericalp::NumericalParameters)
+    
+
+    if !isfile(directory*database_name*".csv")
+        data = DataFrame()
+        CSV.write(directory*database_name*".csv", data)
+    end
+
+    
+    df = CSV.read(directory*database_name*".csv",DataFrame, header=true)
+    # print(df)
+    variable_names =  ["dis_x0",
+    "dis_y0",
+    "dis_d_xprime",
+    "dis_d_yprime",
+    "dis_d_zprime",
+    "dis_xprime_max",
+    "dis_yprime_max",
+    "dis_zprime_max",
+    "dis_d_z",
+    "dis_zmax",
+    "dis_z_max",
+    "dis_t0",
+    "dis_ddt",
+    "dis_delay_max",
+    "dis_fs",
+    "dis_l",
+    "las_pulse_energy_experiment",
+    "las_pulse_energy_gain_factor",
+    "las_laser_spot_fwhm",
+    "las_laser_pulse_time_fwhm",
+    "las_pulse_type",
+    "numericalp_tc_subsampling",
+    "numericalp_subsampling_factor"
+    ]
+
+    values = [dis_sp.x0,
+    dis_sp.y0,
+    dis_sp.xprime[2]-dis_sp.xprime[1],
+    dis_sp.yprime[2]-dis_sp.yprime[1],
+    dis_sp.zprime[2]-dis_sp.zprime[1],
+    maximum(dis_sp.xprime),
+    maximum(dis_sp.yprime),
+    maximum(dis_sp.zprime),
+    dis_sp.z[2]-dis_sp.z[1],
+    maximum(dis_sp.z),
+    dis_sp.z_max,
+    dis_sp.t0,
+    dis_sp.deltat[2]-dis_sp.deltat[1],
+    maximum(dis_sp.deltat),
+    1.0/(dis_sp.t[2]-dis_sp.t[1]),
+    length(dis_sp.t)-1,
+    las.pulse_energy_experiment,
+    las.pulse_energy_gain_factor ,
+    las.laser_spot_fwhm ,
+    las.laser_pulse_time_fwhm ,
+    las.pulse_type,
+    numericalp.tc_subsampling,
+    numericalp.subsampling_factor
+
+    ]
+
+    df[!, "Variable"] = variable_names
+    df[!, simulation_name] = values
+
+    # df = DataFrame(Variable = variable_names', Value = values');
+    # pushfirst!(df, ("simulation",simulation_name), promote = true);
+    CSV.write(directory*database_name*".csv", df) 
+    # print(df)
+end
+
