@@ -4,58 +4,16 @@ using .cdem_julia: mod_laser, mod_physicalconstants, mod_utils, mod_customtypes,
 mod_cdem, mod_eels, mod_electron, mod_material
 using ..mod_customtypes:Discretization
 using ..mod_electron:Electron
-sub_base = "all_angles_y0_1e-5"
 
-las = mod_laser.set_laser!()
-mod_laser.set_laser!(;laser=las,
-    pulse_energy_experiment = 1 * 1e-9,
-    pulse_energy_gain_factor = 0.014,
-    laser_spot_fwhm = 40e-6,
-    theta_pol = 90*pi/180,
-    laser_pulse_time_fwhm = 650e-15);
 
-dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
-    y0 = -1e-7,
-    d_xprime = 4e-2 * 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    d_yprime = 4e-2 * 1e-6,
-    d_zprime = 4e-2 * 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    xprime_max = 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    yprime_max = 1e-6,
-    zprime_max = 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-    d_z = 2e-6,
-    zmax = 1e-4,
-    z_max = 30e-6,
-    t0 = -0.5e-12,
-    ddt = 10e-15,
-    delay_max = 3e-12,
-    fs = 2.4e15,
-    l = 1.08e4)
 
-mat = mod_material.IndiumArsenide()
-elec = mod_electron.set_electron!()
-mod_electron.set_electron!(;electron=elec,
-    electron_total_energy = 0.94,
-    electron_total_time_fs = 360.0,
-    electron_time_coherent_fwhm_fs = 50.0,
-    electron_theta = -7*pi/180,
-    electron_velocity_c = 0.7)
-
-numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 30,subsampling_factor = 60)
-
-base="./analysis_angles/saved-matrices/interact_v_y0_1e-5"
-
+base="./analysis_angles/saved-matrices/CLEO"
+sub_base = "CLEO"
 v_struct = load(base*".jld2");
 
 t_c = dis_sp.t[dis_sp.t .> dis_sp.t0];
 t_c_subsampled = t_c[1:numericalp.tc_subsampling:end];
 w, e_w, t_w = mod_electron.energy_time_grid(elec,numericalp.subsampling_factor,dis_sp.energy, dis_sp.deltat);
-
-interaction_v_pd = v_struct["photodember"]
-
-alpha_pd_0 =  .07;
-alpha_or_0 = 20 * 1.3 * 1.2;
-
-interact_v_pd = circshift(interaction_v_pd, (18,0));
 
 angle_array = sort(vcat([0:20:180;],[45, 135]))
 
@@ -64,8 +22,9 @@ function loss_spectrum!(psi_sub_array::Array{Float64,3},
     ind::Int64,
     interact_v::Array{Float64,2}, 
     discretization::Discretization,
-    elec::Electron)
-        
+    elec::Electron,
+    w::Array{Float64,2}, t_w::Array{Float64,1}, e_w::Array{Float64,1})
+    
     f_t = mod_eels.calculate_ft(discretization, interact_v , elec);
     
     psi = mod_eels.calculate_psi_coherent(dis_sp, elec, f_t);
@@ -74,61 +33,151 @@ function loss_spectrum!(psi_sub_array::Array{Float64,3},
     @views @inbounds psi_incoherent_array[:,:,ind] .= mod_eels.incoherent_convolution_fast(psi_sub, w, t_w, e_w);
 end
 
-psi_sub_array = zeros(length(t_w),length(e_w),length(angle_array));
-psi_incoherent_array = zeros(length(t_w),length(e_w),length(angle_array));
 
-for (ind, angle) in enumerate(angle_array)
-    
-    
-    interact_v = alpha_or_0 .* circshift(v_struct["angle_"*string(angle)], (-15,0)) .+
-    alpha_pd_0 .* interact_v_pd;
-    
-    @time loss_spectrum!(psi_sub_array,
-    psi_incoherent_array,ind,interact_v, dis_sp, elec)
-    
+function plot_all_angles(array_alpha_pd_0::Array{Float64,1},
+    array_alpha_or_0::Array{Float64,1},
+    array_delay_pd::Array{Int64,1},
+    v_struct::Dict{String, Any}, angle_array::Array{Int64, 1}, 
+    elec::Electron, dis_sp::Discretization,  
+    w::Array{Float64,2}, t_w::Array{Float64,1}, e_w::Array{Float64,1},
+    sub_base::String)
+
+    delay_or = -15;
+
+    for alpha_pd_0 in array_alpha_pd_0
+        for alpha_or_0 in array_alpha_or_0
+            for delay_pd in array_delay_pd
+            
+                interact_v_pd = circshift(v_struct["photodember"], (delay_pd,0));
+                psi_sub_array = zeros(length(t_w),length(e_w),length(angle_array));
+                psi_incoherent_array = zeros(length(t_w),length(e_w),length(angle_array));
+            
+                plot_agg = [];
+                gr(size=(850,300));
+            
+                for (ind, angle) in enumerate(angle_array)
+                    
+                    
+                    interact_v = alpha_or_0 .* circshift(v_struct["angle_"*string(angle)], (delay_or,0)) .+
+                    alpha_pd_0 .* interact_v_pd;
+                    
+                    @time loss_spectrum!(psi_sub_array,
+                    psi_incoherent_array,ind,interact_v, dis_sp, elec, w, t_w, e_w)
+            
+                    @views p = heatmap(e_w, t_w .- 0.2, psi_incoherent_array[:,:,ind], c =:jet, 
+                    aspect_ratio = 9/2.5,
+                    xlims=[-4.5,4.5],
+                    ylims=[-1,1.5],
+                    colorbar=false,
+                    xaxis=nothing,
+                    yaxis=nothing,
+                    right_margin = -0Plots.mm)
+                    yflip!(true)
+                    
+                    push!(plot_agg,p)
+                    
+                end
+
+                plot(plot_agg...,layout=(2,6))
+                savefig("./analysis_angles/saved-plots/"*sub_base*"delay_pd_"*string(delay_pd)*
+                "alpha_or_0"*string(alpha_or_0)*
+                "alpha_pd_0"*string(alpha_pd_0)*".svg")
+
+            end
+        end
+    end
+
 end
-# @code_warntype loss_spectrum!(psi_sub_array, psi_incoherent_array,5,interact_v_pd, dis_sp, elec);
-plot_agg = [];
 
-gr(size=(850,300));
+array_alpha_pd_0 = [0.07, 0.05, 0.04]
+array_alpha_or_0 = [20.0, 25.0, 31.2] * (1/4)
+array_delay_pd = [12, 18, 24]
 
-for (ind, angle) in enumerate(angle_array)
-    
-    
-    @views p = heatmap(e_w, t_w .- 0.2, psi_incoherent_array[:,:,ind], c =:jet, 
-    aspect_ratio = 9/2.5,
-    xlims=[-4.5,4.5],
-    ylims=[-1,1.5],
-    colorbar=false,
-    xaxis=nothing,
-    yaxis=nothing,
-    right_margin = -0Plots.mm)
-    yflip!(true)
-    
-    push!(plot_agg,p)
-    
-end
+plot_all_angles(array_alpha_pd_0[1:1],
+array_alpha_or_0[1:1],
+array_delay_pd[1:1],
+v_struct,
+angle_array,
+elec,
+dis_sp,
+w,
+t_w,
+e_w,
+sub_base)
 
-plot(plot_agg...,layout=(2,6))
-savefig("./analysis_angles/saved-plots/"*sub_base*".svg")
-# b = gr(size=(900,300))
-# p1 = heatmap(e_w, t_w .- 0.2, rand(length(e_w),length(t_w)), c =:jet, 
-#     aspect_ratio = 9/2.5,
-#     xlims=[-4.5,4.5],
-#     ylims=[-1,1.5],
-#     colorbar=false,
-#     xaxis=nothing,
-#     yaxis=nothing,
-#     right_margin = -0Plots.mm)
-# yflip!(true)
-# # push!(plot_agg,p1)
+# plot_all_angles(array_alpha_pd_0,
+# array_alpha_or_0,
+# array_delay_pd,
+# v_struct,
+# angle_array,
+# elec,
+# dis_sp,
+# w,
+# t_w,
+# e_w,
+# sub_base)
 
-# plot(p1,p1,p1,p1,p1,p1,p1,p1,p1,p1,p1,p1,layout=(2,6))
+# for alpha_pd_0 in [0.07, 0.05, 0.04]
+# for alpha_or_0 in [20.0, 25.0, 31.2] * (1/4)
+# for delay_pd in [12, 18, 24]
 
-# heatmap(e_w, t_w .- 0.2, rand(length(e_w),length(t_w)), c =:jet, 
-#     aspect_ratio = 10/2.5,
-#     xlims=[-4.5,4.5],
-#     ylims=[-1,1.5],
-#     colorbar=false,
-#     ylabel=L"\Delta t",
-#     xlabel=L"\rm{Energy Loss} (eV)")
+#     interact_v_pd = circshift(v_struct["photodember"], (delay_pd,0));
+#     psi_sub_array = zeros(length(t_w),length(e_w),length(angle_array));
+#     psi_incoherent_array = zeros(length(t_w),length(e_w),length(angle_array));
+
+#     plot_agg = [];
+#     gr(size=(850,300));
+
+#     for (ind, angle) in enumerate(angle_array)
+        
+        
+#         interact_v = alpha_or_0 .* circshift(v_struct["angle_"*string(angle)], (delay_or,0)) .+
+#         alpha_pd_0 .* interact_v_pd;
+        
+#         @time loss_spectrum!(psi_sub_array,
+#         psi_incoherent_array,ind,interact_v, dis_sp, elec, w, t_w, e_w)
+
+#         @views p = heatmap(e_w, t_w .- 0.2, psi_incoherent_array[:,:,ind], c =:jet, 
+#         aspect_ratio = 9/2.5,
+#         xlims=[-4.5,4.5],
+#         ylims=[-1,1.5],
+#         colorbar=false,
+#         xaxis=nothing,
+#         yaxis=nothing,
+#         right_margin = -0Plots.mm)
+#         yflip!(true)
+        
+#         push!(plot_agg,p)
+        
+#     end
+
+    # plot_agg = [];
+    # gr(size=(850,300));
+
+    # for (ind, angle) in enumerate(angle_array)
+        
+        
+    #     @views p = heatmap(e_w, t_w .- 0.2, psi_incoherent_array[:,:,ind], c =:jet, 
+    #     aspect_ratio = 9/2.5,
+    #     xlims=[-4.5,4.5],
+    #     ylims=[-1,1.5],
+    #     colorbar=false,
+    #     xaxis=nothing,
+    #     yaxis=nothing,
+    #     right_margin = -0Plots.mm)
+    #     yflip!(true)
+        
+    #     push!(plot_agg,p)
+        
+    # end
+
+#     plot(plot_agg...,layout=(2,6))
+#     savefig("./analysis_angles/saved-plots/"*sub_base*"delay_pd_"*string(delay_pd)*
+#     "alpha_or_0"*string(alpha_or_0)*
+#     "alpha_pd_0"*string(alpha_pd_0)*".svg")
+
+# end
+# end
+# end
+
+
