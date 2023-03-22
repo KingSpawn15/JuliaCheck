@@ -91,7 +91,7 @@ for (ind,shift_pd) in enumerate(array_shift_pd)
 
 end
 
-
+using GR 
 plot_agg_incoherent = [];
 plot_agg_sub = [];
 gr(size=(1200,650));
@@ -117,9 +117,8 @@ end
 base_sub = "shift_pd "
 titlep = plot(title= base_sub*"Dependence", grid = false, showaxis = false, bottom_margin = -50Plots.px)
 l = @layout [A{0.01h}; (length(array_shift_pd),6)]
-plot(titlep,plot_agg_incoherent...,layout=l)
+pp= plot(titlep,plot_agg_incoherent...,layout=l)
 savefig("./analysis_angles/saved-plots/CLEO"*string(ang)*".svg")
-
     
     
 
