@@ -11,7 +11,7 @@ using ..mod_laser: Laser
 include("../src/utils.jl");
 
 directory="analysis_angles/saved-matrices/"
-simulation_name = "tester2"
+simulation_name = "CLEO"
 database_name = "data_base"
 
 
@@ -48,7 +48,7 @@ mod_laser.set_laser!(;laser=las,
     laser_spot_fwhm = 40e-6,
     theta_pol = 90*pi/180,
     laser_pulse_time_fwhm = 650e-15,
-    pulse_type = false);
+    pulse_type = true);
    
 dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
     y0 = -1e-6,
@@ -106,10 +106,10 @@ function rectification_builder(base::String,
 
 end
 
-# @time t_c_subsampled, t_c, interaction_v_pd=mod_cdem.interaction_potential_photodember(dis_sp, mat, las, numericalp)
-# jldopen(base*".jld2", "a+"; compress = true) do f
-#     f["photodember"] = interaction_v_pd
-# end
+@time t_c_subsampled, t_c, interaction_v_pd=mod_cdem.interaction_potential_photodember(dis_sp, mat, las, numericalp)
+jldopen(base*".jld2", "a+"; compress = true) do f
+    f["photodember"] = interaction_v_pd
+end
 
 
 rectification_builder(base,angle_array[1:1],las,dis_sp,elec,numericalp)
