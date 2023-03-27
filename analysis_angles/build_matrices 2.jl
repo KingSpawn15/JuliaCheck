@@ -11,46 +11,19 @@ using ..mod_laser: Laser
 include("../src/utils.jl");
 
 directory="analysis_angles/saved-matrices/"
-simulation_name = "CLEO"
+simulation_name = "reversal_trial_4"
 database_name = "data_base"
-
-
-# las = mod_laser.set_laser!()
-# mod_laser.set_laser!(;laser=las,
-#     pulse_energy_experiment = 1 * 1e-9,
-#     pulse_energy_gain_factor = 0.014,
-#     laser_spot_fwhm = 120e-6,
-#     theta_pol = 90*pi/180,
-#     laser_pulse_time_fwhm = 50e-15);
-   
-# dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
-#     y0 = -1e-6,
-#     d_xprime = 4e-2 * 4 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-#     d_yprime = 4e-2 * 1e-6,
-#     d_zprime = 4e-2 * 4 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-#     xprime_max = 4 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-#     yprime_max = 1e-6,
-#     zprime_max = 4 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
-#     d_z = 2e-6,
-#     zmax = 1e-4,
-#     z_max = 100e-6,
-#     t0 = -0.5e-12,
-#     ddt = 10e-15,
-#     delay_max = 3e-12,
-#     fs = 2.4e15,
-#     l = 1.08e4)
-
 
 las = mod_laser.set_laser!()
 mod_laser.set_laser!(;laser=las,
     pulse_energy_experiment = 1 * 1e-9,
     pulse_energy_gain_factor = 0.014,
-    laser_spot_fwhm = 40e-6,
+    laser_spot_fwhm = 100e-6,
     theta_pol = 90*pi/180,
-    laser_pulse_time_fwhm = 650e-15,
-    pulse_type = true);
+    laser_pulse_time_fwhm = 50e-15,
+    pulse_type = false);
    
-dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
+    dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
     y0 = -1e-6,
     d_xprime = 4e-2 * 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
     d_yprime = 4e-2 * 1e-6,
@@ -60,7 +33,7 @@ dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
     zprime_max = 3 * mod_utils.calculate_sigma(las.laser_spot_fwhm),
     d_z = 2e-6,
     zmax = 1e-4,
-    z_max = 30e-6,
+    z_max = 80e-6,
     t0 = -0.5e-12,
     ddt = 10e-15,
     delay_max = 3e-12,
@@ -77,14 +50,14 @@ mod_electron.set_electron!(;electron=elec,
     electron_theta = -7*pi/180,
     electron_velocity_c = 0.7)
 
-numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 30,subsampling_factor = 60)
+numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 5,subsampling_factor = 60)
 # numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 10, subsampling_factor = 60)
 
 save_to_database(directory, database_name, simulation_name, dis_sp, las, numericalp)
 
 base = directory*simulation_name
-angle_array = vcat([0:10:180;],[45 , 135])
-# angle_array = [90, 150, 0]
+# angle_array = vcat([0:10:180;],[45 , 135])
+angle_array = [90, 150, 0]
 
 function rectification_builder(base::String, 
     angle_array::Array{Int64,1}, 
@@ -107,9 +80,32 @@ function rectification_builder(base::String,
 end
 
 @time t_c_subsampled, t_c, interaction_v_pd=mod_cdem.interaction_potential_photodember(dis_sp, mat, las, numericalp)
+
+
 jldopen(base*".jld2", "a+"; compress = true) do f
-    f["photodember"] = interaction_v_pd
+
+    fieldname = "photodember";
+    filename = base*".jld2";
+    if haskey(f, fieldname)
+        println("The field $fieldname already exists in $filename.")
+        println("Do you want to skip (s) or overwrite (o)?")
+        choice = String(readline())
+        println(choice)
+        if choice == "s"
+            println("skipped")
+            return
+        elseif choice == "o"
+            delete!(f, fieldname)
+        else choice != "o"
+            error("Invalid choice"*choice)
+        end       
+    end
+    f[fieldname] = interaction_v_pd
+    # f[fieldname] = interaction_v_pd
+
 end
+
+
 
 
 rectification_builder(base,angle_array[1:1],las,dis_sp,elec,numericalp)
