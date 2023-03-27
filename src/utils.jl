@@ -1,12 +1,13 @@
 using LaTeXStrings
 using DataFrames
 using CSV
-
+using Cairo, Rsvg
+using FileIO
 function loss_spectrum!(psi_sub_array::Array{Float64,3},
     psi_incoherent_array::Array{Float64,3},
     ind::Int64,
     interact_v::Array{Float64,2}, 
-    discretization::Discretization,
+    discretization::Discretization,numericalp::NumericalParameters,
     elec::Electron, w::Array{Float64,2}, t_w::Array{Float64,1}, e_w::Array{Float64,1})
         
     f_t = mod_eels.calculate_ft(discretization, interact_v , elec);
@@ -20,7 +21,7 @@ end
 function loss_spectrum!(psi_sub_array::Array{Float64,2},
     psi_incoherent_array::Array{Float64,2},
     interact_v::Array{Float64,2}, 
-    discretization::Discretization,
+    discretization::Discretization,numericalp::NumericalParameters,
     elec::Electron, w::Array{Float64,2}, t_w::Array{Float64,1}, e_w::Array{Float64,1})
         
     f_t = mod_eels.calculate_ft(discretization, interact_v , elec);
@@ -174,3 +175,38 @@ function save_to_database(directory::String, database_name::String, simulation_n
     # print(df)
 end
 
+function convert_svgs_to_pngs(input_folder::AbstractString, output_folder::AbstractString, dpi::Int)
+    for file in readdir(input_folder)
+        if endswith(file, ".svg")
+            input_file = joinpath(input_folder, file)
+            output_file = joinpath(output_folder, string(basename(splitext(file)[1] * ".png")))
+
+            r = Rsvg.handle_new_from_file(input_file);
+            d = Rsvg.handle_get_dimensions(r);
+            cs = Cairo.CairoImageSurface(d.width *Int(ceil(dpi/72)),d.height  *Int(ceil(dpi/72)),Cairo.FORMAT_ARGB32);
+            c = Cairo.CairoContext(cs);
+            Cairo.scale(c, dpi/72, dpi/72)
+            Rsvg.handle_render_cairo(c,r);
+            Cairo.write_to_png(cs,output_file);
+
+        end
+    end
+end
+
+function convert_svg_to_png(input_file::AbstractString, dpi::Int)
+    
+            # input_file = joinpath(input_folder, file)
+            file = basename(input_file)
+            output_folder = dirname(input_file)
+            output_file = joinpath(output_folder, string(basename(splitext(file)[1] * ".png")))
+
+            r = Rsvg.handle_new_from_file(input_file);
+            d = Rsvg.handle_get_dimensions(r);
+            cs = Cairo.CairoImageSurface(d.width *Int(ceil(dpi/72)),d.height  *Int(ceil(dpi/72)),Cairo.FORMAT_ARGB32);
+            c = Cairo.CairoContext(cs);
+            Cairo.scale(c, dpi/72, dpi/72)
+            Rsvg.handle_render_cairo(c,r);
+            Cairo.write_to_png(cs,output_file);
+
+
+end

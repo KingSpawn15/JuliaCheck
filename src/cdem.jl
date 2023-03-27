@@ -622,8 +622,8 @@ module cdem_julia
 
             else 
 
+                println("Single Pulse")
                 Threads.@threads for time_ind in 1:n
-                    println("Single Pulse")
 
                     integrate_v_rectification_single!(interaction_v,
                     time_ind,
