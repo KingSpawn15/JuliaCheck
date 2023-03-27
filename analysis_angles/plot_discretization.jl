@@ -8,17 +8,25 @@ using ..mod_electron:Electron
 include("../src/utils.jl");
 
 
-base="./analysis_angles/saved-matrices/reversal_trial_4"
+base="./analysis_angles/saved-matrices/cleo"
 
 v_struct = load(base*".jld2");
+
+# shift_pd = 18
+# shift_or = -15
+# alpha_pd_factor = 0.07
+# alpha_or_factor = 3
+
+# array_shift_pd = [10, 18, 23]
+# array_shift_or = [15, 0 , -5 ]
 
 shift_pd = 18
 shift_or = -15
 alpha_pd_factor = 0.07
 alpha_or_factor = 3
 
-array_shift_pd = [10, 18, 23]
-array_shift_or = [15, 0 , -5 ]
+array_shift_pd = [14, 18, 22]
+# array_shift_or = [-15 ]
 
 ang = 90
 # interact_v_pd = circshift(v_struct["photodember"], (shift_pd,0));
@@ -91,7 +99,7 @@ titlep = plot(title= base_sub*"Dependence", grid = false, showaxis = false, bott
 l = @layout [A{0.01h}; (length(array_shift_pd),6)]
 pp= plot(titlep,plot_agg_incoherent...,layout=l)
 
-filename = "./analysis_angles/saved-plots/reversal_trial_4_"*string(ang)*".svg";
+filename = "./analysis_angles/saved-plots/cleo"*string(ang)*".svg";
 savefig(filename)
 convert_svg_to_png(filename, 300)
     
