@@ -11,7 +11,7 @@ using ..mod_laser: Laser
 include("../src/utils.jl");
 
 directory="analysis_angles/saved-matrices/"
-simulation_name = "reversal_trial_4"
+simulation_name = "testing"
 database_name = "data_base"
 
 las = mod_laser.set_laser!()
@@ -20,8 +20,8 @@ mod_laser.set_laser!(;laser=las,
     pulse_energy_gain_factor = 0.014,
     laser_spot_fwhm = 100e-6,
     theta_pol = 90*pi/180,
-    laser_pulse_time_fwhm = 50e-15,
-    pulse_type = false);
+    laser_pulse_time_fwhm = 650e-15,
+    pulse_type = true);
    
     dis_sp = mod_discrete.discretization_setup(;x0 = 0.,
     y0 = -1e-6,
@@ -50,14 +50,14 @@ mod_electron.set_electron!(;electron=elec,
     electron_theta = -7*pi/180,
     electron_velocity_c = 0.7)
 
-numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 5,subsampling_factor = 60)
+numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 30,subsampling_factor = 60)
 # numericalp = mod_customtypes.NumericalParameters(;tc_subsampling = 10, subsampling_factor = 60)
 
 save_to_database(directory, database_name, simulation_name, dis_sp, las, numericalp)
 
 base = directory*simulation_name
 # angle_array = vcat([0:10:180;],[45 , 135])
-angle_array = [90, 150, 0]
+angle_array = [90]
 
 function rectification_builder(base::String, 
     angle_array::Array{Int64,1}, 
